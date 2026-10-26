@@ -5,27 +5,51 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
 require_once dirname(__DIR__) . '/includes/order-tiles.php';
-require_once dirname(__DIR__) . '/includes/location-picker.php';
 
 $user = require_roles(staff_roles());
 $staffId = (int) $user['id'];
 $errors = [];
+$view = query('view', 'open');
+if (!in_array($view, ['open', 'delivered', 'pending'], true)) {
+    $view = 'open';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
     $action = post('action');
     $orderId = (int) post('order_id');
     $order = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
-    $knownActions = ['out_for_delivery', 'delivered'];
+    $knownActions = ['out_for_delivery', 'delivered', 'collect_payment'];
 
     if ($order === null) {
         $errors[] = 'Order not found.';
     } elseif (!in_array($action, $knownActions, true)) {
         $errors[] = 'Unknown action.';
+    } elseif ($action === 'collect_payment') {
+        $due = max(0.0, (float) $order['total_amount'] - (float) $order['paid_amount']);
+        $amount = (float) post('amount');
+        $method = post('method');
+        if ((string) $order['status'] !== 'delivered') {
+            $errors[] = 'Only delivered orders can collect a pending balance here.';
+        } elseif (order_is_closed($order)) {
+            $errors[] = 'This order is delivered and fully paid, so it is closed.';
+        } elseif ($due <= 0.005) {
+            $errors[] = 'This order has no pending balance.';
+        } elseif ($amount <= 0) {
+            $errors[] = 'Please enter a valid collection amount.';
+        } elseif (!isset(payment_methods()[$method])) {
+            $errors[] = 'Please select a valid payment method.';
+        } else {
+            record_payment($orderId, $amount, $method, post('reference_no') !== '' ? post('reference_no') : null, 'Pending balance collected after delivery', $staffId);
+            $after = (array) db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
+            flash('success', money($amount) . ' collected for order ' . $order['order_number'] . '.'
+                . (order_is_closed($after) ? ' The order is now closed.' : ''));
+            redirect('staff/delivery.php?view=' . ($due - $amount > 0.005 ? 'pending' : 'delivered'));
+        }
     } else {
         // Shared queue: any staff member may deliver any order. The order is
         // assigned to whoever actually handles it.
-        claim_order_for_staff($orderId, $staffId);
+        claim_order_for_staff($orderId, $staffId, 'delivery');
         $order = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
 
         if ($order === null) {
@@ -50,9 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($collect) {
                     $due = max(0.0, (float) $order['total_amount'] - (float) $order['paid_amount']);
-                    if (order_is_closed($order)) {
-                        $collectError = 'This order is already fully paid and closed.';
-                    } elseif ($due <= 0.005) {
+                    if ($due <= 0.005) {
                         $collectError = 'This order has no pending balance.';
                     } elseif ($amount <= 0) {
                         $collectError = 'Please enter a valid collection amount.';
@@ -74,7 +96,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         record_payment($orderId, $amount, $method, post('reference_no') !== '' ? post('reference_no') : null, 'Collected on delivery', $staffId);
                     }
 
-                    flash('success', 'Order ' . $order['order_number'] . ' marked as delivered.');
+                    $after = (array) db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
+                    flash('success', 'Order ' . $order['order_number'] . ' marked as delivered.'
+                        . (order_is_closed($after) ? ' It is now closed.' : ' A pending balance remains for collection.'));
                     redirect('staff/delivery.php');
                 }
             }
@@ -90,6 +114,20 @@ $deliveries = db_all(
      WHERE o.status IN ('ready_for_delivery','out_for_delivery')
      ORDER BY o.scheduled_delivery_date ASC, o.id ASC"
 );
+
+$historyWhere = $view === 'pending'
+    ? "o.status = 'delivered' AND o.payment_status <> 'paid'"
+    : "o.status = 'delivered'";
+$history = $view === 'open' ? [] : db_all(
+    "SELECT o.*, c.name AS customer_name, u.name AS delivery_staff_name
+     FROM orders o
+     JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN users u ON u.id = o.delivery_staff_id
+     WHERE {$historyWhere}
+     ORDER BY o.delivery_completed_at DESC, o.id DESC
+     LIMIT 200"
+);
+
 $completed = db_all(
     "SELECT o.* FROM orders o
      WHERE o.delivery_staff_id = ? AND o.delivery_completed_at IS NOT NULL
@@ -115,6 +153,9 @@ $oldDuesTotal = 0.0;
 foreach ($duesCustomers as $entry) {
     $oldDuesTotal += (float) $entry['total'];
 }
+
+$deliveredCount = (int) db_value("SELECT COUNT(*) FROM orders WHERE status = 'delivered'", [], 0);
+$pendingCount = (int) db_value("SELECT COUNT(*) FROM orders WHERE status = 'delivered' AND payment_status <> 'paid'", [], 0);
 
 layout_start('Delivery Queue', 'app');
 ?>
@@ -150,6 +191,13 @@ layout_start('Delivery Queue', 'app');
     </div>
 </div>
 
+<nav class="tab-nav" aria-label="Delivery views">
+    <a class="tab-link<?= $view === 'open' ? ' active' : '' ?>" href="<?= e(url('staff/delivery.php?view=open')) ?>">Open (<?= e((string) count($deliveries)) ?>)</a>
+    <a class="tab-link<?= $view === 'delivered' ? ' active' : '' ?>" href="<?= e(url('staff/delivery.php?view=delivered')) ?>">Delivered (<?= e((string) $deliveredCount) ?>)</a>
+    <a class="tab-link<?= $view === 'pending' ? ' active' : '' ?>" href="<?= e(url('staff/delivery.php?view=pending')) ?>">Payment Pending (<?= e((string) $pendingCount) ?>)</a>
+</nav>
+
+<?php if ($view === 'open'): ?>
 <div class="panel">
     <div class="panel-head">
         <h2>All Delivery Tasks</h2>
@@ -179,11 +227,10 @@ layout_start('Delivery Queue', 'app');
                     $note .= ' · handling it assigns it to you';
                 }
                 if ($closed) {
-                    $note .= ' · Closed (fully paid)';
+                    $note .= ' · Closed (delivered & paid)';
                 }
 
-                $actions = '<a class="btn btn-sm btn-ghost" href="' . e(url('staff/pos.php?order_id=' . (int) $order['id'])) . '">'
-                    . ($closed ? 'View items' : 'Open POS') . '</a>';
+                $actions = '<a class="btn btn-sm btn-ghost" href="' . e(url('staff/pos.php?order_id=' . (int) $order['id'])) . '">Open POS</a>';
                 $mapUrl = map_link(
                     isset($order['pickup_latitude']) && $order['pickup_latitude'] !== null ? (float) $order['pickup_latitude'] : null,
                     isset($order['pickup_longitude']) && $order['pickup_longitude'] !== null ? (float) $order['pickup_longitude'] : null,
@@ -232,9 +279,55 @@ layout_start('Delivery Queue', 'app');
         <?php endif; ?>
     </div>
 </div>
+<?php else: ?>
+<div class="panel">
+    <div class="panel-head">
+        <h2><?= $view === 'pending' ? 'Delivered · Payment Pending' : 'Delivered Orders' ?></h2>
+        <span class="subtle"><?= e((string) count($history)) ?> order(s)</span>
+    </div>
+    <div class="panel-body tight">
+        <?php if ($history === []): ?>
+            <div class="empty-state">
+                <strong>Nothing here yet</strong>
+                <?= $view === 'pending' ? 'All delivered orders are fully paid.' : 'Delivered orders will appear here.' ?>
+            </div>
+        <?php else: ?>
+            <?php foreach ($history as $order): ?>
+                <?php
+                $due = max(0.0, (float) $order['total_amount'] - (float) $order['paid_amount']);
+                $closed = order_is_closed($order);
+                $note = 'Delivered ' . format_datetime((string) $order['delivery_completed_at'])
+                    . ' · ' . order_items_summary((int) $order['id'])
+                    . ' · ' . ($closed ? 'Closed (delivered & paid)' : 'Payment pending');
+                $actions = '<a class="btn btn-sm btn-ghost" href="' . e(url('staff/pos.php?order_id=' . (int) $order['id'])) . '">View items</a>';
+                if ($due > 0.005 && !$closed) {
+                    $actions .= '<form method="post">'
+                        . csrf_field()
+                        . '<input type="hidden" name="action" value="collect_payment">'
+                        . '<input type="hidden" name="order_id" value="' . e((string) $order['id']) . '">'
+                        . '<span class="subtle">Due ' . e(money($due)) . '</span>'
+                        . '<input type="number" name="amount" min="0" step="0.01" value="' . e(number_format($due, 2, '.', '')) . '" placeholder="Amount">'
+                        . '<select name="method">' . payment_method_options() . '</select>'
+                        . '<input type="text" name="reference_no" placeholder="Ref">'
+                        . '<button class="btn btn-sm btn-primary" type="submit"'
+                        . ' data-confirm="' . e('Collect ' . money($due) . ' for ' . $order['order_number'] . '?') . '"'
+                        . ' data-confirm-2="' . e('Second check: confirm the payment for ' . $order['order_number'] . ' has been received.') . '">'
+                        . 'Collect</button>'
+                        . '</form>';
+                }
+                echo order_tile($order, [
+                    'note' => $note,
+                    'actions' => $actions,
+                ]);
+                ?>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="panel">
-    <div class="panel-head"><h3>Recently Delivered</h3></div>
+    <div class="panel-head"><h3>Recently Delivered By You</h3></div>
     <div class="panel-body tight">
         <?php if ($completed === []): ?>
             <div class="empty-state">No deliveries completed yet.</div>

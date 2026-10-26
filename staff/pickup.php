@@ -6,7 +6,6 @@ require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
 require_once dirname(__DIR__) . '/includes/order-items.php';
 require_once dirname(__DIR__) . '/includes/order-tiles.php';
-require_once dirname(__DIR__) . '/includes/location-picker.php';
 
 $user = require_roles(staff_roles());
 $staffId = (int) $user['id'];
@@ -25,19 +24,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!in_array($action, $knownActions, true)) {
         $errors[] = 'Unknown action.';
     } elseif ($action === 'add_items' && !order_accepts_items($order)) {
-        $errors[] = 'This order is closed because it is fully paid. Items can no longer be added.';
+        $errors[] = 'This order is delivered or cancelled, so its items are locked.';
     } elseif ($action === 'collect_payment' && order_is_closed($order)) {
-        $errors[] = 'This order is already fully paid and closed.';
+        $errors[] = 'This order is delivered and fully paid, so it is closed.';
     } else {
         // Shared queue: any staff member may handle any open pickup order. The
         // order is assigned to whoever actually handles it.
-        claim_order_for_staff($orderId, $staffId);
+        claim_order_for_staff($orderId, $staffId, $action === 'ready' ? 'delivery' : 'pickup');
         $order = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
 
         if ($order === null) {
             $errors[] = 'Order not found.';
         } elseif ($action === 'add_items') {
-            $items = collect_items_from_post();
+            $items = collect_items_from_post(true);
             if ($items === []) {
                 $errors[] = 'Please add at least one item.';
             } else {
@@ -66,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 record_payment($orderId, $amount, $method, post('reference_no') !== '' ? post('reference_no') : null, 'Collected at pickup', $staffId);
                 $closedNow = order_is_closed((array) db_row('SELECT * FROM orders WHERE id = ?', [$orderId]));
                 flash('success', money($amount) . ' collected for order ' . $order['order_number'] . '.'
-                    . ($closedNow ? ' The order is now closed because it is fully paid.' : ''));
+                    . ($closedNow ? ' The order is now closed because it is delivered and fully paid.' : ''));
                 redirect('staff/pickup.php');
             }
         }
@@ -173,6 +172,7 @@ layout_start('Pickup Queue', 'app');
                 <?php
                 $due = max(0.0, (float) $order['total_amount'] - (float) $order['paid_amount']);
                 $closed = order_is_closed($order);
+                $locked = order_items_locked($order);
                 $assignment = 'Unassigned';
                 if ((int) $order['pickup_staff_id'] === $staffId) {
                     $assignment = 'Assigned to you';
@@ -185,11 +185,13 @@ layout_start('Pickup Queue', 'app');
                     $note .= ' · handling it assigns it to you';
                 }
                 if ($closed) {
-                    $note .= ' · Closed (fully paid)';
+                    $note .= ' · Closed (delivered & paid)';
+                } elseif ($locked) {
+                    $note .= ' · Items locked (' . str_replace('_', ' ', (string) $order['status']) . ')';
                 }
 
                 $actions = '<a class="btn btn-sm btn-ghost" href="' . e(url('staff/pos.php?order_id=' . (int) $order['id'])) . '">'
-                    . ($closed ? 'View items' : 'Open POS') . '</a>';
+                    . ($locked ? 'View items' : 'Open POS') . '</a>';
                 $mapUrl = map_link(
                     isset($order['pickup_latitude']) && $order['pickup_latitude'] !== null ? (float) $order['pickup_latitude'] : null,
                     isset($order['pickup_longitude']) && $order['pickup_longitude'] !== null ? (float) $order['pickup_longitude'] : null,
@@ -200,8 +202,8 @@ layout_start('Pickup Queue', 'app');
                     $actions .= '<a class="btn btn-sm btn-ghost" href="' . e($mapUrl) . '" target="_blank" rel="noopener">Navigate</a>';
                 }
 
-                if ($closed) {
-                    $actions .= '<span class="subtle">Fully paid - items are locked</span>';
+                if ($locked) {
+                    $actions .= '<span class="subtle">' . ($closed ? 'Delivered and paid - items are locked' : 'Items are locked after delivery') . '</span>';
                 }
 
                 if (in_array($order['status'], ['new', 'pickup_assigned'], true)) {
@@ -242,9 +244,9 @@ layout_start('Pickup Queue', 'app');
                         . '</form>';
                 }
 
-                if (!$closed) {
+                if (!$locked) {
                     ob_start();
-                    render_item_picker([], $catalog, ['intro' => 'At the customer: add the garments you see, adjust the quantity or weight, then save.']);
+                    render_item_picker([], $catalog, ['intro' => 'At the customer: add the garments you see and verify the actual kg before saving.']);
                     $pickerHtml = (string) ob_get_clean();
                     $actions .= '<div class="tile-add"><details>'
                         . '<summary>Add items to this order</summary>'

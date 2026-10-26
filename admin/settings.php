@@ -16,7 +16,6 @@ $fields = [
     'tax_percent' => '0',
     'backup_retention_days' => '7',
     'report_footer_note' => 'Thank you for your business.',
-    'google_maps_api_key' => '',
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -95,16 +94,6 @@ layout_start('Settings', 'app');
                 </div>
             </div>
 
-            <h3>Google Maps location picker</h3>
-            <div class="form-group">
-                <label for="google_maps_api_key">Google Maps JavaScript API key</label>
-                <input type="text" id="google_maps_api_key" name="google_maps_api_key" value="<?= e($values['google_maps_api_key']) ?>" autocomplete="off" spellcheck="false">
-                <div class="help">
-                    Enable <strong>Maps JavaScript API</strong> and <strong>Places API</strong> in Google Cloud, then paste the key here.
-                    Restrict the key to your website domain (HTTP referrers) and to those two APIs so it cannot be misused.
-                    Leave empty to keep manual address entry and the browser "current location" pin without a map.
-                </div>
-            </div>
             <div class="form-actions">
                 <button class="btn" type="submit">Save Settings</button>
             </div>

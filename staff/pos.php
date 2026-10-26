@@ -22,19 +22,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($order === null) {
         $errors[] = 'Order not found.';
-    } elseif ($action !== 'add_items') {
+    } elseif (!in_array($action, ['add_items', 'verify_weights'], true)) {
         $errors[] = 'Unknown action.';
     } elseif (!order_accepts_items($order)) {
-        $errors[] = 'This order is closed because it is fully paid. Items can no longer be added.';
+        $errors[] = 'This order is delivered or cancelled, so its items are locked.';
     } else {
         // Shared queue: any staff member may add items to any open order.
-        claim_order_for_staff($orderId, $staffId);
+        claim_order_for_staff($orderId, $staffId, 'pickup');
         $order = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
 
         if ($order === null) {
             $errors[] = 'Order not found.';
+        } elseif ($action === 'verify_weights') {
+            $weights = $_POST['weights'] ?? [];
+            $updated = is_array($weights) ? update_order_item_weights($orderId, $weights, $staffId) : 0;
+            if ($updated === 0) {
+                $errors[] = 'No per-kg items were updated.';
+            } else {
+                audit('order.weights_verified', 'order', (string) $orderId, $updated . ' weight(s) verified');
+                flash('success', 'Verified weights saved for ' . $updated . ' item(s).');
+                redirect('staff/pos.php?order_id=' . $orderId);
+            }
         } else {
-            $items = collect_items_from_post();
+            $items = collect_items_from_post(true);
             if ($items === []) {
                 $errors[] = 'Please add at least one item.';
             } else {
@@ -79,13 +89,15 @@ layout_start('Add Items (POS)', 'app');
     $orderItems = db_all('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', [$orderId]);
     $due = max(0.0, (float) $order['total_amount'] - (float) $order['paid_amount']);
     $closed = order_is_closed($order);
+    $locked = order_items_locked($order);
+    $kgItems = array_values(array_filter($orderItems, static fn(array $item): bool => (string) $item['price_mode'] === 'per_kg'));
     ?>
     <div class="panel">
         <div class="panel-head">
             <h2><?= e($order['order_number']) ?> &middot; <?= e($order['contact_name']) ?></h2>
             <div class="row-between">
                 <?php if ($closed): ?>
-                    <span class="badge badge-success">Paid &middot; Closed</span>
+                    <span class="badge badge-success">Closed</span>
                 <?php endif; ?>
                 <a class="btn btn-sm btn-ghost" href="<?= e(url('staff/pos.php')) ?>">Back to list</a>
             </div>
@@ -101,15 +113,17 @@ layout_start('Add Items (POS)', 'app');
         </div>
     </div>
 
-    <?php if ($closed): ?>
-        <div class="alert alert-warning">This order is closed because it is fully paid. Items can no longer be added. The owner can mark it unpaid to reopen it.</div>
+    <?php if ($locked): ?>
+        <div class="alert alert-warning"><?= $closed
+            ? 'This order is delivered and fully paid, so it is closed. Items can no longer be added or changed.'
+            : 'This order is delivered, so its items are locked. The pending balance can still be collected from the delivery or dues page.' ?></div>
     <?php endif; ?>
 
     <div class="panel">
         <div class="panel-head"><h3>Items on this order</h3></div>
         <div class="panel-body tight">
             <?php if ($orderItems === []): ?>
-                <div class="empty-state"><strong>No items yet</strong><?= $closed ? 'This order is closed.' : 'Add the garments below once you reach the customer.' ?></div>
+                <div class="empty-state"><strong>No items yet</strong><?= $locked ? 'This order is delivered or cancelled, so its items are locked.' : 'Add the garments below once you reach the customer.' ?></div>
             <?php else: ?>
                 <div class="table-wrap">
                     <table class="data">
@@ -120,23 +134,64 @@ layout_start('Add Items (POS)', 'app');
                         <?php foreach ($orderItems as $item): ?>
                             <tr>
                                 <td><?= e($item['item_name']) ?></td>
-                                <td><?= e(service_type_label((string) $item['service_type'])) ?></td>
+                                <td><?= e(order_item_service_label($item)) ?></td>
                                 <td><?= $item['price_mode'] === 'per_kg' ? 'Per kg' : 'Per piece' ?></td>
                                 <td class="num"><?= e((string) $item['qty']) ?></td>
-                                <td class="num"><?= e(number_format((float) $item['weight_kg'], 3)) ?> kg</td>
+                                <td class="num">
+                                    <?= e(number_format((float) $item['weight_kg'], 3)) ?> kg
+                                    <?php if ((string) $item['price_mode'] === 'per_kg'): ?>
+                                        <span class="badge <?= (int) $item['weight_verified'] === 1 ? 'badge-success' : 'badge-warn' ?>"><?= (int) $item['weight_verified'] === 1 ? 'Verified' : 'Estimated' ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="num"><?= e(money((float) $item['rate'])) ?></td>
                                 <td class="num"><?= e(money((float) $item['amount'])) ?></td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
                     </table>
-                    <p class="subtle mt-1" style="font-size: .8rem;">Items already on the order cannot be removed here. <?= $closed ? 'This order is closed.' : 'Ask the owner if something was added by mistake.' ?></p>
+                    <p class="subtle mt-1" style="font-size: .8rem;">Items already on the order cannot be removed here. <?= $locked ? 'This order is delivered or cancelled, so its items are locked.' : 'Ask the owner if something was added by mistake.' ?></p>
                 </div>
             <?php endif; ?>
         </div>
     </div>
 
-    <?php if (!$closed): ?>
+    <?php if (!$locked && $kgItems !== []): ?>
+        <div class="panel">
+            <div class="panel-head"><h3>Verify actual weight</h3></div>
+            <div class="panel-body">
+                <p class="subtle">Customer weight is an estimate. Enter the actual kg you measured - the bill updates automatically.</p>
+                <form method="post" action="<?= e(url('staff/pos.php')) ?>">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="verify_weights">
+                    <input type="hidden" name="order_id" value="<?= e((string) $orderId) ?>">
+                    <div class="table-wrap">
+                        <table class="data">
+                            <thead>
+                                <tr><th>Item</th><th>Service</th><th class="num">Actual weight (kg)</th><th>Status</th></tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($kgItems as $item): ?>
+                                <tr>
+                                    <td><?= e((string) $item['item_name']) ?></td>
+                                    <td><?= e(order_item_service_label($item)) ?></td>
+                                    <td class="num">
+                                        <input type="number" name="weights[<?= (int) $item['id'] ?>]" min="0" step="0.5" value="<?= e((string) (float) $item['weight_kg']) ?>" inputmode="decimal" style="max-width:110px;">
+                                    </td>
+                                    <td><span class="badge <?= (int) $item['weight_verified'] === 1 ? 'badge-success' : 'badge-warn' ?>"><?= (int) $item['weight_verified'] === 1 ? 'Verified' : 'Estimated' ?></span></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="form-actions mt-1">
+                        <button class="btn btn-green" type="submit">Save verified weights</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!$locked): ?>
         <div class="panel">
             <div class="panel-head"><h3>Add items</h3></div>
             <div class="panel-body">
@@ -145,7 +200,7 @@ layout_start('Add Items (POS)', 'app');
                     <input type="hidden" name="action" value="add_items">
                     <input type="hidden" name="order_id" value="<?= e((string) $orderId) ?>">
 
-                    <?php render_item_picker([], $catalog, ['intro' => 'Tap a service to add it, then adjust the quantity or weight.']); ?>
+                    <?php render_item_picker([], $catalog, ['intro' => 'Add the garments you received. Enter the actual kg for kg services - the pickup boy verifies the weight.']); ?>
 
                     <div class="form-actions mt-1">
                         <button class="btn btn-lg btn-green" type="submit">Add to order</button>
@@ -171,7 +226,7 @@ layout_start('Add Items (POS)', 'app');
                     $assignment = 'Pickup: ' . ((string) ($order['pickup_staff_name'] ?? '') !== '' ? $order['pickup_staff_name'] : 'unassigned')
                         . ' · Delivery: ' . ((string) ($order['delivery_staff_name'] ?? '') !== '' ? $order['delivery_staff_name'] : 'unassigned');
                     echo order_tile($order, [
-                        'note' => $assignment . ' · ' . order_items_summary((int) $order['id']) . ($closed ? ' · Closed (fully paid)' : ''),
+                        'note' => $assignment . ' · ' . order_items_summary((int) $order['id']) . ($closed ? ' · Closed (delivered & paid)' : ''),
                         'actions' => '<a class="btn btn-sm" href="' . e(url('staff/pos.php?order_id=' . (int) $order['id'])) . '">' . ($closed ? 'View items' : 'Add items') . '</a>',
                     ]);
                     ?>

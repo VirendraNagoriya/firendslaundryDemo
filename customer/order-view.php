@@ -47,10 +47,15 @@ layout_start('Order ' . $order['order_number'], 'customer');
                         <?php foreach ($items as $item): ?>
                             <tr>
                                 <td><?= e($item['item_name']) ?></td>
-                                <td><?= e(service_type_label((string) $item['service_type'])) ?></td>
+                                <td><?= e(order_item_service_label($item)) ?></td>
                                 <td><?= $item['price_mode'] === 'per_kg' ? 'Per kg' : 'Per piece' ?></td>
                                 <td class="num"><?= e((string) $item['qty']) ?></td>
-                                <td class="num"><?= e(number_format((float) $item['weight_kg'], 3)) ?> kg</td>
+                                <td class="num">
+                                    <?= e(number_format((float) $item['weight_kg'], 3)) ?> kg
+                                    <?php if ((string) $item['price_mode'] === 'per_kg'): ?>
+                                        <span class="badge <?= (int) $item['weight_verified'] === 1 ? 'badge-success' : 'badge-warn' ?>"><?= (int) $item['weight_verified'] === 1 ? 'Verified' : 'Estimate' ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="num"><?= e(money((float) $item['rate'])) ?></td>
                                 <td class="num"><?= e(money((float) $item['amount'])) ?></td>
                             </tr>
@@ -58,6 +63,18 @@ layout_start('Order ' . $order['order_number'], 'customer');
                         </tbody>
                     </table>
                 </div>
+                <?php
+                $hasEstimate = false;
+                foreach ($items as $itemRow) {
+                    if ((string) $itemRow['price_mode'] === 'per_kg' && (int) $itemRow['weight_verified'] !== 1) {
+                        $hasEstimate = true;
+                        break;
+                    }
+                }
+                ?>
+                <?php if ($hasEstimate): ?>
+                    <p class="subtle">Weight is an estimate. The pickup boy will measure and verify the actual kg.</p>
+                <?php endif; ?>
 
                 <div class="mt-1" style="max-width: 320px; margin-left:auto;">
                     <div class="total-row"><span>Subtotal</span><span><?= e(money((float) $order['subtotal'])) ?></span></div>

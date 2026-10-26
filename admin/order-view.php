@@ -4,7 +4,6 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
-require_once dirname(__DIR__) . '/includes/location-picker.php';
 
 $user = require_admin();
 $orderId = query_int('id');
@@ -17,6 +16,7 @@ if ($order === null) {
 
 $errors = [];
 $closed = order_is_closed($order);
+$itemsLocked = order_items_locked($order);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $amount = (float) post('amount');
         $method = post('method');
         if ($closed) {
-            $errors[] = 'This order is fully paid and closed. Mark it unpaid to record another payment.';
+            $errors[] = 'This order is delivered and fully paid, so it is closed. Mark it unpaid to record another payment.';
         } elseif ($amount <= 0) {
             $errors[] = 'Please enter a valid collection amount.';
         } elseif (!isset(payment_methods()[$method])) {
@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'mark_paid') {
         if ($closed) {
-            flash('info', 'This order is already fully paid and closed.');
+            flash('info', 'This order is delivered and fully paid, so it is closed.');
             redirect('admin/order-view.php?id=' . $orderId);
         }
         $dueNow = (float) $order['total_amount'] - (float) $order['paid_amount'];
@@ -88,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         db_exec('UPDATE payments SET voided_at = NOW() WHERE order_id = ? AND voided_at IS NULL', [$orderId]);
         recalc_order($orderId);
         audit('order.mark_unpaid', 'order', (string) $orderId, 'Owner marked ' . $order['order_number'] . ' as unpaid');
-        flash('success', 'Order ' . $order['order_number'] . ' marked as unpaid - all payments were voided. The order is open again, so items can be added.');
+        flash('success', 'Order ' . $order['order_number'] . ' marked as unpaid - all payments were voided. Delivered orders keep their items locked.');
         redirect('admin/order-view.php?id=' . $orderId);
     }
 
@@ -134,7 +134,7 @@ layout_start('Order ' . $order['order_number'], 'app');
                     <span class="badge <?= e(status_badge((string) $order['status'])) ?>"><?= e(order_status_label((string) $order['status'])) ?></span>
                     <span class="badge <?= e(status_badge((string) $order['payment_status'])) ?>"><?= e(payment_status_label((string) $order['payment_status'])) ?></span>
                     <?php if ($closed): ?>
-                        <span class="badge badge-success" title="Fully paid - no more items can be added">Closed</span>
+                        <span class="badge badge-success" title="Delivered and fully paid - no more items can be added">Closed</span>
                     <?php endif; ?>
                 </div>
             </div>
@@ -156,10 +156,15 @@ layout_start('Order ' . $order['order_number'], 'app');
                         <?php foreach ($items as $item): ?>
                             <tr>
                                 <td><?= e($item['item_name']) ?></td>
-                                <td><?= e(service_type_label((string) $item['service_type'])) ?></td>
+                                <td><?= e(order_item_service_label($item)) ?></td>
                                 <td><?= $item['price_mode'] === 'per_kg' ? 'Per kg' : 'Per piece' ?></td>
                                 <td class="num"><?= e((string) $item['qty']) ?></td>
-                                <td class="num"><?= e(number_format((float) $item['weight_kg'], 3)) ?> kg</td>
+                                <td class="num">
+                                    <?= e(number_format((float) $item['weight_kg'], 3)) ?> kg
+                                    <?php if ((string) $item['price_mode'] === 'per_kg'): ?>
+                                        <span class="badge <?= (int) $item['weight_verified'] === 1 ? 'badge-success' : 'badge-warn' ?>"><?= (int) $item['weight_verified'] === 1 ? 'Verified' : 'Estimated' ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="num"><?= e(money((float) $item['rate'])) ?></td>
                                 <td class="num"><?= e(money((float) $item['amount'])) ?></td>
                             </tr>
@@ -191,9 +196,11 @@ layout_start('Order ' . $order['order_number'], 'app');
                     <?php endif; ?>
                 </div>
             </div>
-            <?php if ($closed): ?>
+            <?php if ($itemsLocked): ?>
                 <div class="panel-body tight">
-                    <div class="subtle">This order is closed because it is fully paid. Items are locked; use Mark Unpaid to reopen it.</div>
+                    <div class="subtle"><?= $closed
+                        ? 'This order is delivered and fully paid, so it is closed. Items are locked to keep the final bill stable.'
+                        : 'This order is delivered, so its items are locked. The balance can still be collected.' ?></div>
                 </div>
             <?php endif; ?>
         </div>

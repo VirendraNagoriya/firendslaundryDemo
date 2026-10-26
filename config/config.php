@@ -7,7 +7,7 @@ define('APP_CURRENCY', '₹');
 define('APP_TIMEZONE', 'Asia/Kolkata');
 define('APP_CONTACT_PHONE', '+91 98765 43210');
 define('APP_CONTACT_EMAIL', 'support@laundryfriends.test');
-define('APP_ASSET_VERSION', '2026-10-26a');
+define('APP_ASSET_VERSION', '2026-10-26c');
 
 date_default_timezone_set(APP_TIMEZONE);
 

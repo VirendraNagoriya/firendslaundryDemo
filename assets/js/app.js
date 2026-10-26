@@ -25,15 +25,9 @@
     }
 
     function rowInfo(row) {
-        var mode = 'per_piece';
-        var group = row.querySelector('[data-mode-group]');
-        if (group) {
-            var checked = group.querySelector('input:checked');
-            mode = checked ? checked.value : 'per_piece';
-        } else {
-            var select = row.querySelector('select[name^="item_mode"]');
-            if (select) { mode = select.value; }
-        }
+        var mode = row.getAttribute('data-service-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
+        var modeInput = row.querySelector('[data-mode-value]');
+        if (modeInput && modeInput.value === 'per_kg') { mode = 'per_kg'; }
         return {
             qty: fieldValue(row, '[name="item_qty[]"], [name^="item_qty"]'),
             kg: fieldValue(row, '[name="item_weight[]"], [name^="item_weight"]'),
@@ -43,9 +37,9 @@
     }
 
     function serviceLabel(row) {
-        var select = row.querySelector('select[name^="item_service_type"]');
+        var select = row.querySelector('select[name^="item_service_id"]');
         if (!select || select.selectedIndex < 0) { return ''; }
-        return select.options[select.selectedIndex].text;
+        return select.options[select.selectedIndex].text.replace(/\s*\((per kg|per piece)\)$/, '');
     }
 
     function currencyOf(scope) {
@@ -124,15 +118,62 @@
         var backdrop = picker.querySelector('[data-sheet-backdrop]');
         var template = picker.querySelector('[data-item-template]');
         var currency = picker.getAttribute('data-currency') || '';
-        var counter = 5000 + pickerIndex * 100;
         var catalog = [];
         var catalogNode = picker.querySelector('[data-catalog]');
         if (catalogNode) {
             try { catalog = JSON.parse(catalogNode.textContent || '[]'); } catch (err) { catalog = []; }
         }
 
+        var serviceDatalist = document.createElement('datalist');
+        serviceDatalist.id = 'serviceItems' + (pickerIndex + 1);
+        picker.appendChild(serviceDatalist);
+
         function refresh() {
             recalc(picker);
+        }
+
+        function catalogForService(serviceId) {
+            return catalog.filter(function (entry) {
+                return String(entry.service_id) === String(serviceId);
+            });
+        }
+
+        function selectedServiceChip() {
+            return sheet ? sheet.querySelector('input[name="sheet_service_id"]:checked') : null;
+        }
+
+        function chipMode(chip) {
+            return chip && chip.getAttribute('data-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
+        }
+
+        function syncSheetService() {
+            if (!sheet) { return; }
+            var chip = selectedServiceChip();
+            var mode = chipMode(chip);
+            var qtyField = sheet.querySelector('[data-sheet-qty]');
+            var weightField = sheet.querySelector('[data-sheet-weight]');
+            var custom = sheet.querySelector('[data-custom-name]');
+            var kgNote = sheet.querySelector('[data-kg-note]');
+            var rateInput = sheet.querySelector('[data-sheet-rate]');
+            var serviceId = chip ? chip.value : '';
+
+            if (qtyField) { qtyField.hidden = mode === 'per_kg'; }
+            if (weightField) { weightField.hidden = mode !== 'per_kg'; }
+            if (custom) { custom.hidden = mode === 'per_kg'; }
+            if (kgNote) { kgNote.hidden = mode !== 'per_kg'; }
+            if (rateInput && chip) { rateInput.value = chip.getAttribute('data-rate') || 0; }
+
+            var visible = 0;
+            picker.querySelectorAll('[data-quick-item]').forEach(function (button) {
+                var match = String(button.getAttribute('data-service-id')) === String(serviceId);
+                button.hidden = !match;
+                if (match) { visible++; }
+            });
+            var empty = picker.querySelector('[data-quick-empty]');
+            if (empty) { empty.hidden = visible > 0; }
+
+            var nameInput = sheet.querySelector('[data-sheet-name]');
+            if (nameInput) { nameInput.value = ''; }
         }
 
         function showEmptyState() {
@@ -142,51 +183,73 @@
                 empty = document.createElement('div');
                 empty.className = 'empty-state item-empty';
                 empty.setAttribute('data-item-empty', '');
-                empty.innerHTML = '<strong>No items added yet</strong>Tap <b>+ Add item</b> below - pick a service from the list or type your own.';
+                empty.innerHTML = '<strong>No items added yet</strong>Tap <b>+ Add item</b> below and choose a service first.';
                 list.appendChild(empty);
             }
         }
 
-        function hideEmptyState() {
-            var empty = list ? list.querySelector('[data-item-empty]') : null;
-            if (empty) { empty.remove(); }
-        }
-
         function newCard() {
             if (!template) { return null; }
-            var card = template.content.firstElementChild.cloneNode(true);
-            counter += 1;
-            card.querySelectorAll('[data-mode-group] input').forEach(function (input) {
-                input.name = 'mode_pick_' + counter;
+            return template.content.firstElementChild.cloneNode(true);
+        }
+
+        function syncServiceDatalist(card, mode) {
+            var nameInput = card.querySelector('[name="item_name[]"]');
+            if (!nameInput) { return; }
+            if (mode !== 'per_kg') {
+                nameInput.removeAttribute('list');
+                if (template) {
+                    var templateInput = template.content.querySelector('[name="item_name[]"]');
+                    if (templateInput && templateInput.getAttribute('list')) {
+                        nameInput.setAttribute('list', templateInput.getAttribute('list'));
+                    }
+                }
+                return;
+            }
+            var select = card.querySelector('[data-service-select]');
+            var serviceId = select ? select.value : '';
+            serviceDatalist.innerHTML = '';
+            catalogForService(serviceId).forEach(function (entry) {
+                var option = document.createElement('option');
+                option.value = entry.name;
+                serviceDatalist.appendChild(option);
             });
-            return card;
+            nameInput.setAttribute('list', serviceDatalist.id);
+        }
+
+        function applyService(card, mode, rate, setRate) {
+            var modeValue = card.querySelector('[data-mode-value]');
+            if (modeValue) { modeValue.value = mode; }
+            var serviceType = card.querySelector('[data-service-type]');
+            var select = card.querySelector('[data-service-select]');
+            if (serviceType && select && select.selectedIndex >= 0) {
+                serviceType.value = select.options[select.selectedIndex].getAttribute('data-type') || '';
+            }
+            var qtyField = card.querySelector('[data-field-qty]');
+            var weightField = card.querySelector('[data-field-weight]');
+            if (qtyField) { qtyField.hidden = mode === 'per_kg'; }
+            if (weightField) { weightField.hidden = mode !== 'per_kg'; }
+            card.setAttribute('data-service-mode', mode);
+            if (setRate) {
+                var rateInput = card.querySelector('[data-rate-input]');
+                if (rateInput) { rateInput.value = rate; }
+            }
+            syncServiceDatalist(card, mode);
         }
 
         function setCardValues(card, data) {
             var nameInput = card.querySelector('[name="item_name[]"]');
             if (nameInput) { nameInput.value = data.name || ''; }
-            var serviceSelect = card.querySelector('select[name="item_service_type[]"]');
-            if (serviceSelect && data.service) { serviceSelect.value = data.service; }
+            var serviceSelect = card.querySelector('[data-service-select]');
+            if (serviceSelect && data.service_id) { serviceSelect.value = String(data.service_id); }
             var mode = data.mode === 'per_kg' ? 'per_kg' : 'per_piece';
-            card.querySelectorAll('[data-mode-group] input').forEach(function (input) {
-                input.checked = input.value === mode;
-            });
-            var modeValue = card.querySelector('[data-mode-value]');
-            if (modeValue) { modeValue.value = mode; }
             var qty = card.querySelector('[name="item_qty[]"]');
             if (qty) { qty.value = data.qty === undefined ? 1 : data.qty; }
             var weight = card.querySelector('[name="item_weight[]"]');
             if (weight) { weight.value = mode === 'per_kg' ? (data.weight === undefined ? 1 : data.weight) : 0; }
             var rate = card.querySelector('[name="item_rate[]"]');
             if (rate) { rate.value = data.rate === undefined ? 0 : data.rate; }
-            toggleModeFields(card, mode);
-        }
-
-        function toggleModeFields(card, mode) {
-            var qtyField = card.querySelector('[data-field-qty]');
-            var weightField = card.querySelector('[data-field-weight]');
-            if (qtyField) { qtyField.hidden = mode === 'per_kg'; }
-            if (weightField) { weightField.hidden = mode !== 'per_kg'; }
+            applyService(card, mode, data.rate === undefined ? 0 : data.rate, false);
         }
 
         function addCard(data) {
@@ -204,27 +267,14 @@
 
         function openSheet() {
             if (!sheet) { return; }
-            var nameInput = sheet.querySelector('[data-sheet-name]');
-            var rateInput = sheet.querySelector('[data-sheet-rate]');
             var qtyInput = sheet.querySelector('[data-sheet-qty]');
             var weightInput = sheet.querySelector('[data-sheet-weight]');
-            if (nameInput) { nameInput.value = ''; }
-            if (rateInput) { rateInput.value = ''; }
             if (qtyInput) { qtyInput.value = 1; }
             if (weightInput) { weightInput.value = 1; }
-            var service = sheet.querySelector('input[name="sheet_service"]:checked');
-            if (service) { service.checked = true; }
-            var mode = sheet.querySelector('input[name="sheet_mode"]:checked');
-            if (mode) { mode.checked = true; }
-            var modeValue = mode ? mode.value : 'per_piece';
-            var qtyField = sheet.querySelector('[data-sheet-qty]');
-            var weightField = sheet.querySelector('[data-sheet-weight]');
-            if (qtyField) { qtyField.hidden = modeValue === 'per_kg'; }
-            if (weightField) { weightField.hidden = modeValue !== 'per_kg'; }
+            syncSheetService();
             sheet.hidden = false;
             if (backdrop) { backdrop.hidden = false; }
             document.body.classList.add('sheet-open');
-            if (nameInput) { window.setTimeout(function () { nameInput.focus(); }, 60); }
         }
 
         function closeSheet() {
@@ -234,33 +284,43 @@
             document.body.classList.remove('sheet-open');
         }
 
-        function sheetMode() {
-            var mode = sheet ? sheet.querySelector('input[name="sheet_mode"]:checked') : null;
-            return mode ? mode.value : 'per_piece';
-        }
-
         function addFromSheet() {
             if (!sheet) { return; }
             var nameInput = sheet.querySelector('[data-sheet-name]');
             var rateInput = sheet.querySelector('[data-sheet-rate]');
             var qtyInput = sheet.querySelector('[data-sheet-qty]');
             var weightInput = sheet.querySelector('[data-sheet-weight]');
-            var service = sheet.querySelector('input[name="sheet_service"]:checked');
+            var chip = selectedServiceChip();
+            var mode = chipMode(chip);
+            var serviceId = chip ? chip.value : '';
             var name = nameInput ? nameInput.value.trim() : '';
-            if (name === '') {
+
+            if (mode === 'per_kg') {
+                var match = null;
+                catalogForService(serviceId).forEach(function (entry) {
+                    if (!match && entry.name.toLowerCase() === name.toLowerCase()) { match = entry; }
+                });
+                if (!match) {
+                    var first = picker.querySelector('[data-quick-item][data-service-id="' + serviceId + '"]');
+                    if (first && first.scrollIntoView) {
+                        first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return;
+                }
+                name = match.name;
+            } else if (name === '') {
                 if (nameInput) { nameInput.focus(); }
                 return;
             }
-            var mode = sheetMode();
-            var data = {
+
+            var card = addCard({
                 name: name,
-                service: service ? service.value : 'wash_fold',
+                service_id: serviceId,
                 mode: mode,
                 qty: num(qtyInput ? qtyInput.value : 1) || 1,
                 weight: num(weightInput ? weightInput.value : 1) || 1,
                 rate: num(rateInput ? rateInput.value : 0)
-            };
-            var card = addCard(data);
+            });
             closeSheet();
             if (card && card.scrollIntoView) {
                 card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -270,17 +330,17 @@
         function applyCatalogDefaults(nameInput) {
             var term = nameInput.value.trim().toLowerCase();
             if (term === '') { return; }
+            var chip = selectedServiceChip();
+            var serviceId = chip ? chip.value : '';
             var found = null;
             catalog.forEach(function (entry) {
-                if (!found && entry.name.toLowerCase() === term) { found = entry; }
+                if (!found && entry.name.toLowerCase() === term && String(entry.service_id) === String(serviceId)) {
+                    found = entry;
+                }
             });
             if (!found || !sheet) { return; }
-            var service = sheet.querySelector('input[name="sheet_service"][value="' + found.service + '"]');
-            if (service) { service.checked = true; }
-            var mode = sheet.querySelector('input[name="sheet_mode"][value="' + found.mode + '"]');
-            if (mode) { mode.checked = true; }
             var rate = sheet.querySelector('[data-sheet-rate]');
-            if (rate && num(rate.value) === 0) { rate.value = found.rate; }
+            if (rate) { rate.value = found.rate; }
         }
 
         picker.addEventListener('click', function (event) {
@@ -299,7 +359,7 @@
                 if (!pick) { return; }
                 var card = addCard({
                     name: pick.name,
-                    service: pick.service,
+                    service_id: pick.service_id,
                     mode: pick.mode,
                     qty: 1,
                     weight: 1,
@@ -361,21 +421,21 @@
 
         picker.addEventListener('change', function (event) {
             var target = event.target;
-            if (target.matches('[data-mode-group] input')) {
-                var card = target.closest('[data-item-row]');
-                if (card) {
-                    var modeValue = card.querySelector('[data-mode-value]');
-                    if (modeValue) { modeValue.value = target.value; }
-                    toggleModeFields(card, target.value);
+            if (target.matches('[data-service-select]')) {
+                var row = target.closest('[data-item-row]');
+                if (row) {
+                    var option = target.options[target.selectedIndex];
+                    var mode = option && option.getAttribute('data-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
+                    var rate = option ? num(option.getAttribute('data-rate')) : 0;
+                    var nameInput = row.querySelector('[name="item_name[]"]');
+                    if (nameInput) { nameInput.value = ''; }
+                    applyService(row, mode, rate, true);
                 }
                 refresh();
                 return;
             }
-            if (target.matches('input[name="sheet_mode"]')) {
-                var sheetQ = picker.querySelector('[data-sheet-qty]');
-                var sheetW = picker.querySelector('[data-sheet-weight]');
-                if (sheetQ) { sheetQ.hidden = target.value === 'per_kg'; }
-                if (sheetW) { sheetW.hidden = target.value !== 'per_kg'; }
+            if (target.matches('input[name="sheet_service_id"]')) {
+                syncSheetService();
                 return;
             }
             refresh();
@@ -386,6 +446,12 @@
             if (!event.target.matches('[data-sheet-name], [data-sheet-rate], [data-sheet-qty], [data-sheet-weight]')) { return; }
             event.preventDefault();
             addFromSheet();
+        });
+
+        // Existing rows: restore the correct qty/weight fields and kg item list.
+        picker.querySelectorAll('[data-item-row]').forEach(function (row) {
+            var mode = row.getAttribute('data-service-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
+            applyService(row, mode, 0, false);
         });
 
         recalc(picker);
@@ -534,23 +600,35 @@
         });
     });
 
-    var installButton = document.querySelector('[data-install-app]');
+    var installButtons = document.querySelectorAll('[data-install-app]');
     var installPrompt = null;
+    var installHint = 'Open the browser menu and choose "Add to Home screen" / "Install app". On iPhone or iPad, tap Share then "Add to Home Screen".';
+
     window.addEventListener('beforeinstallprompt', function (event) {
         event.preventDefault();
         installPrompt = event;
-        if (installButton) { installButton.hidden = false; }
     });
-    if (installButton) {
-        installButton.addEventListener('click', function () {
-            if (!installPrompt) { return; }
+
+    function isStandalone() {
+        return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    }
+
+    installButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            if (isStandalone()) {
+                window.alert('Laundry Friends is already installed on this device.');
+                return;
+            }
+            if (!installPrompt) {
+                window.alert(installHint);
+                return;
+            }
             installPrompt.prompt();
             installPrompt.userChoice.then(function () {
                 installPrompt = null;
-                installButton.hidden = true;
             });
         });
-    }
+    });
 
     var folds = document.querySelectorAll('details.fold');
     folds.forEach(function (fold) {

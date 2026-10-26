@@ -1,36 +1,104 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Active catalog rows joined with their service. An item always belongs to a
+ * service, and the service decides whether it is billed per piece or per kg.
+ */
 function active_catalog(): array
 {
-    return db_all('SELECT * FROM laundry_items WHERE is_active = 1 ORDER BY item_name');
+    return db_all(
+        'SELECT i.*, s.service_name, s.price_mode AS service_price_mode, s.rate AS service_rate
+         FROM laundry_items i
+         JOIN services s ON s.id = i.service_id
+         WHERE i.is_active = 1 AND s.is_active = 1
+         ORDER BY s.service_name, i.item_name'
+    );
 }
 
 /**
- * One item card (mobile first): name, service, billing mode, qty / weight, rate and amount.
- *
- * The radio inputs of every card use their own name (radio groups are global inside a form),
- * the real value travels in a hidden "item_mode[]" field so the server keeps receiving the
- * same array of values as the old table editor.
+ * Resolve the service for a saved line so the editor can preselect it even for
+ * legacy rows that only carry a service_type key.
  */
-function item_card_html(array $item, string $catalogListId = '', int $index = 0): string
+function item_service_id(array $item, array $services): int
 {
-    $mode = (string) ($item['price_mode'] ?? 'per_piece');
-    $service = (string) ($item['service_type'] ?? 'wash_fold');
+    $serviceId = (int) ($item['service_id'] ?? 0);
+    if ($serviceId > 0) {
+        foreach ($services as $service) {
+            if ((int) $service['id'] === $serviceId) {
+                return $serviceId;
+            }
+        }
+    }
+
+    $type = (string) ($item['service_type'] ?? '');
+    $name = trim((string) ($item['item_name'] ?? ''));
+    if ($type !== '') {
+        foreach ($services as $service) {
+            if (service_type_for_name((string) $service['service_name']) === $type) {
+                return (int) $service['id'];
+            }
+        }
+    }
+    if ($name !== '') {
+        $row = db_row(
+            'SELECT service_id FROM laundry_items WHERE item_name = ? ORDER BY id LIMIT 1',
+            [$name]
+        );
+        if ($row !== null) {
+            return (int) $row['service_id'];
+        }
+    }
+    return $services !== [] ? (int) $services[0]['id'] : 0;
+}
+
+/**
+ * One item card (mobile first): service, item name, qty / weight, rate and amount.
+ *
+ * The service owns the billing mode. Per-kg services only accept catalog items,
+ * so the name field becomes a select-like list of that service's items.
+ */
+function item_card_html(array $item, string $catalogListId = '', int $index = 0, array $services = []): string
+{
+    if ($services === []) {
+        $services = active_services();
+    }
+
+    $serviceId = item_service_id($item, $services);
+    $selectedService = null;
+    foreach ($services as $service) {
+        if ((int) $service['id'] === $serviceId) {
+            $selectedService = $service;
+            break;
+        }
+    }
+
+    $mode = (string) ($item['price_mode'] ?? ($selectedService['price_mode'] ?? 'per_piece'));
+    $mode = $mode === 'per_kg' ? 'per_kg' : 'per_piece';
     $name = (string) ($item['item_name'] ?? '');
-    $qty = max(0, (int) ($item['qty'] ?? 1));
+    $qty = max(1, (int) ($item['qty'] ?? 1));
     $weight = (float) ($item['weight_kg'] ?? 0);
     $rate = (float) ($item['rate'] ?? 0);
-    $radioName = 'mode_pick_' . $index;
+    if ($rate <= 0 && $selectedService !== null) {
+        $rate = (float) $selectedService['rate'];
+    }
 
     $serviceOptions = '';
-    foreach (service_types() as $key => $label) {
-        $serviceOptions .= '<option value="' . e($key) . '"' . ($service === $key ? ' selected' : '') . '>' . e($label) . '</option>';
+    foreach ($services as $service) {
+        $serviceMode = (string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
+        $serviceOptions .= '<option value="' . (int) $service['id'] . '"'
+            . ' data-mode="' . e($serviceMode) . '"'
+            . ' data-type="' . e(service_type_for_name((string) $service['service_name'])) . '"'
+            . ' data-rate="' . e((string) (float) $service['rate']) . '"'
+            . ((int) $service['id'] === $serviceId ? ' selected' : '') . '>'
+            . e((string) $service['service_name'])
+            . ' (' . ($serviceMode === 'per_kg' ? 'per kg' : 'per piece') . ')'
+            . '</option>';
     }
 
     ob_start();
     ?>
-    <div class="item-card" data-item-row>
+    <div class="item-card" data-item-row data-service-mode="<?= e($mode) ?>">
         <div class="item-card-top">
             <div class="item-card-title">
                 <input type="text" class="item-name-input" name="item_name[]" value="<?= e($name) ?>"
@@ -43,21 +111,13 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0)
         <div class="item-card-grid">
             <label class="item-field">
                 <span class="item-field-label">Service</span>
-                <select name="item_service_type[]"><?= $serviceOptions ?></select>
+                <select name="item_service_id[]" data-service-select><?= $serviceOptions ?></select>
             </label>
-            <div class="item-field">
-                <span class="item-field-label">Billed by</span>
-                <div class="segmented" data-mode-group>
-                    <label><input type="radio" name="<?= e($radioName) ?>" value="per_piece"<?= $mode === 'per_piece' ? ' checked' : '' ?>><span>Per piece</span></label>
-                    <label><input type="radio" name="<?= e($radioName) ?>" value="per_kg"<?= $mode === 'per_kg' ? ' checked' : '' ?>><span>Per kg</span></label>
-                </div>
-                <input type="hidden" name="item_mode[]" value="<?= e($mode) ?>" data-mode-value>
-            </div>
             <div class="item-field" data-field-qty<?= $mode === 'per_kg' ? ' hidden' : '' ?>>
                 <span class="item-field-label">How many</span>
                 <div class="stepper">
                     <button type="button" data-step="-1" data-target="qty" aria-label="One less">&minus;</button>
-                    <input type="number" name="item_qty[]" min="0" step="1" value="<?= e((string) $qty) ?>" inputmode="numeric">
+                    <input type="number" name="item_qty[]" min="1" step="1" value="<?= e((string) $qty) ?>" inputmode="numeric">
                     <button type="button" data-step="1" data-target="qty" aria-label="One more">+</button>
                 </div>
             </div>
@@ -68,63 +128,76 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0)
                     <input type="number" name="item_weight[]" min="0" step="0.5" value="<?= e((string) $weight) ?>" inputmode="decimal">
                     <button type="button" data-step="0.5" data-target="weight" aria-label="Half kilo more">+</button>
                 </div>
+                <span class="item-field-hint">Weight will be measured / verified by the pickup boy.</span>
             </div>
             <label class="item-field">
                 <span class="item-field-label">Rate (<?= e(APP_CURRENCY) ?>)</span>
-                <input type="number" name="item_rate[]" min="0" step="0.5" value="<?= e((string) $rate) ?>" inputmode="decimal">
+                <input type="number" name="item_rate[]" min="0" step="0.5" value="<?= e((string) $rate) ?>" inputmode="decimal" data-rate-input>
             </label>
             <div class="item-field item-field-amount">
                 <span class="item-field-label">Amount</span>
                 <strong data-amount><?= e(number_format(0, 2)) ?></strong>
             </div>
         </div>
+        <input type="hidden" name="item_mode[]" value="<?= e($mode) ?>" data-mode-value>
+        <input type="hidden" name="item_service_type[]" value="<?= e(service_type_for_name((string) ($selectedService['service_name'] ?? ''))) ?>" data-service-type>
     </div>
     <?php
     return (string) ob_get_clean();
 }
 
 /**
- * Mobile first item entry: cards + quick picks + "add item" sheet + running total.
- * Posts the same fields as the old table editor, so every form keeps working.
+ * Mobile first item entry: cards + service-filtered quick picks + running total.
+ * Every card posts a real service_id, so a kg service can only bill its own items.
  */
 function render_item_picker(array $items, array $catalog, array $options = []): void
 {
     static $instance = 0;
     $instance++;
     $catalogListId = 'catalogList' . $instance;
+    $services = active_services();
 
     $quickPicks = [];
     foreach ($catalog as $row) {
-        $rate = $row['price_mode'] === 'per_kg' ? (float) $row['rate_per_kg'] : (float) $row['rate_per_piece'];
+        $mode = (string) ($row['service_price_mode'] ?? $row['price_mode'] ?? 'per_piece') === 'per_kg' ? 'per_kg' : 'per_piece';
+        $rate = service_effective_rate(
+            ['price_mode' => $mode, 'rate' => (float) ($row['service_rate'] ?? 0)],
+            $row
+        );
         $quickPicks[] = [
             'name' => (string) $row['item_name'],
-            'service' => (string) $row['service_type'],
-            'mode' => (string) $row['price_mode'],
+            'service_id' => (int) $row['service_id'],
+            'service' => (string) ($row['service_name'] ?? ''),
+            'service_type' => (string) $row['service_type'],
+            'mode' => $mode,
             'rate' => $rate,
         ];
     }
 
     $catalogJson = (string) json_encode($quickPicks, JSON_UNESCAPED_UNICODE);
     $serviceChips = '';
-    foreach (service_types() as $key => $label) {
-        $serviceChips .= '<label class="chip-choice"><input type="radio" name="sheet_service" value="' . e($key) . '"'
-            . ($key === 'wash_fold' ? ' checked' : '') . '><span>' . e($label) . '</span></label>';
+    foreach ($services as $service) {
+        $mode = (string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
+        $serviceChips .= '<label class="chip-choice"><input type="radio" name="sheet_service_id" value="' . (int) $service['id'] . '"'
+            . ' data-mode="' . e($mode) . '" data-rate="' . e((string) (float) $service['rate']) . '"'
+            . ($serviceChips === '' ? ' checked' : '') . '><span>' . e((string) $service['service_name']) . '</span></label>';
     }
     ?>
     <div class="item-picker" data-item-picker data-currency="<?= e(APP_CURRENCY) ?>">
         <?php if (!empty($options['intro'])): ?>
             <p class="subtle item-picker-intro"><?= e((string) $options['intro']) ?></p>
         <?php endif; ?>
+        <p class="subtle item-picker-hint">For kg services, pick an item from the service list. The pickup boy verifies the actual weight.</p>
 
         <div class="item-list" data-item-list>
             <?php if ($items === []): ?>
                 <div class="empty-state item-empty" data-item-empty>
                     <strong>No items added yet</strong>
-                    Tap <b>+ Add item</b> below - pick a service from the list or type your own.
+                    Tap <b>+ Add item</b> below and choose a service first.
                 </div>
             <?php endif; ?>
             <?php foreach (array_values($items) as $index => $item): ?>
-                <?= item_card_html($item, $catalogListId, $index) ?>
+                <?= item_card_html($item, $catalogListId, $index, $services) ?>
             <?php endforeach; ?>
         </div>
 
@@ -139,7 +212,7 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
         </div>
         <input type="hidden" name="total_amount" value="0">
         <script type="application/json" data-catalog><?= $catalogJson ?></script>
-        <template data-item-template><?= item_card_html(['item_name' => '', 'qty' => 1, 'weight_kg' => 0, 'rate' => 0], $catalogListId, 0) ?></template>
+        <template data-item-template><?= item_card_html(['item_name' => '', 'qty' => 1, 'weight_kg' => 0, 'rate' => 0], $catalogListId, 0, $services) ?></template>
 
         <div class="sheet-backdrop" data-sheet-backdrop hidden></div>
         <div class="sheet" data-sheet role="dialog" aria-modal="true" aria-label="Add an item" hidden>
@@ -149,38 +222,30 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                 <button type="button" class="sheet-close" data-sheet-close aria-label="Close">&times;</button>
             </div>
             <div class="sheet-body">
-                <?php if ($quickPicks !== []): ?>
-                    <div class="sheet-section">
-                        <span class="sheet-label">Tap to add</span>
-                        <div class="quick-picks" data-quick-picks>
-                            <?php foreach ($quickPicks as $pick): ?>
-                                <button type="button" class="quick-pick" data-quick-item="<?= e((string) json_encode($pick, JSON_UNESCAPED_UNICODE)) ?>">
-                                    <strong><?= e($pick['name']) ?></strong>
-                                    <span><?= e(APP_CURRENCY) ?><?= e(number_format((float) $pick['rate'], 2)) ?><?= $pick['mode'] === 'per_kg' ? ' / kg' : ' / pc' ?></span>
-                                </button>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <div class="sheet-section">
-                        <span class="sheet-label">Or type your own</span>
-                    </div>
-                <?php endif; ?>
-
-                <div class="sheet-section">
-                    <input type="text" class="sheet-input" data-sheet-name list="<?= e($catalogListId) ?>" placeholder="e.g. Shirt, Saree, Curtains" autocomplete="off">
-                </div>
-
                 <div class="sheet-section">
                     <span class="sheet-label">Service</span>
                     <div class="chip-group"><?= $serviceChips ?></div>
                 </div>
 
-                <div class="sheet-section">
-                    <span class="sheet-label">Billed by</span>
-                    <div class="segmented segmented-lg" data-sheet-mode>
-                        <label><input type="radio" name="sheet_mode" value="per_piece" checked><span>Per piece</span></label>
-                        <label><input type="radio" name="sheet_mode" value="per_kg"><span>Per kg</span></label>
+                <?php if ($quickPicks !== []): ?>
+                    <div class="sheet-section">
+                        <span class="sheet-label">Tap to add</span>
+                        <div class="quick-picks" data-quick-picks>
+                            <?php foreach ($quickPicks as $pick): ?>
+                                <button type="button" class="quick-pick" data-service-id="<?= (int) $pick['service_id'] ?>" data-quick-item="<?= e((string) json_encode($pick, JSON_UNESCAPED_UNICODE)) ?>">
+                                    <strong><?= e($pick['name']) ?></strong>
+                                    <span><?= e(APP_CURRENCY) ?><?= e(number_format((float) $pick['rate'], 2)) ?><?= $pick['mode'] === 'per_kg' ? ' / kg' : ' / pc' ?></span>
+                                </button>
+                            <?php endforeach; ?>
+                        </div>
+                        <p class="subtle quick-picks-empty" data-quick-empty hidden>This service has no catalog items yet. Add them in Admin &rarr; Services &amp; items.</p>
                     </div>
+                <?php endif; ?>
+
+                <div class="sheet-section" data-custom-name>
+                    <span class="sheet-label">Item name</span>
+                    <input type="text" class="sheet-input" data-sheet-name list="<?= e($catalogListId) ?>" placeholder="e.g. Shirt, Saree, Curtains" autocomplete="off">
+                    <p class="subtle" data-kg-note hidden>Kg services only accept catalog items. Pick one above.</p>
                 </div>
 
                 <div class="sheet-grid">
@@ -188,17 +253,18 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                         <span class="sheet-label">How many</span>
                         <div class="stepper stepper-lg">
                             <button type="button" data-step="-1" data-target="sheet_qty" aria-label="One less">&minus;</button>
-                            <input type="number" data-sheet-qty min="0" step="1" value="1" inputmode="numeric">
+                            <input type="number" data-sheet-qty min="1" step="1" value="1" inputmode="numeric">
                             <button type="button" data-step="1" data-target="sheet_qty" aria-label="One more">+</button>
                         </div>
                     </div>
                     <div class="sheet-field" data-sheet-weight hidden>
-                        <span class="sheet-label">Weight (kg)</span>
+                        <span class="sheet-label">Estimated weight (kg)</span>
                         <div class="stepper stepper-lg">
                             <button type="button" data-step="-0.5" data-target="sheet_weight" aria-label="Half kilo less">&minus;</button>
                             <input type="number" data-sheet-weight min="0" step="0.5" value="1" inputmode="decimal">
                             <button type="button" data-step="0.5" data-target="sheet_weight" aria-label="Half kilo more">+</button>
                         </div>
+                        <span class="item-field-hint">Weight will be measured / verified by the pickup boy.</span>
                     </div>
                     <div class="sheet-field">
                         <span class="sheet-label">Rate (<?= e(APP_CURRENCY) ?>)</span>
@@ -223,10 +289,11 @@ function render_item_editor(array $items, array $catalog): void
     render_item_picker($items, $catalog);
 }
 
-function collect_items_from_post(): array
+function collect_items_from_post(bool $weightsVerified = false): array
 {
     $names = $_POST['item_name'] ?? [];
-    $services = $_POST['item_service_type'] ?? [];
+    $serviceIds = $_POST['item_service_id'] ?? [];
+    $serviceTypes = $_POST['item_service_type'] ?? [];
     $modes = $_POST['item_mode'] ?? [];
     $qtys = $_POST['item_qty'] ?? [];
     $weights = $_POST['item_weight'] ?? [];
@@ -244,10 +311,13 @@ function collect_items_from_post(): array
         }
         $items[] = [
             'item_name' => $name,
-            'service_type' => (string) ($services[$index] ?? 'wash_fold'),
+            'service_id' => (int) ($serviceIds[$index] ?? 0),
+            'service_type' => (string) ($serviceTypes[$index] ?? ''),
             'price_mode' => (string) ($modes[$index] ?? 'per_piece'),
             'qty' => (int) ($qtys[$index] ?? 1),
             'weight_kg' => (float) ($weights[$index] ?? 0),
+            'weight_verified' => $weightsVerified ? 1 : 0,
+            'weight_verified_by' => $weightsVerified ? (current_user()['id'] ?? null) : null,
             'rate' => (float) ($rates[$index] ?? 0),
             'notes' => (string) ($notes[$index] ?? ''),
         ];

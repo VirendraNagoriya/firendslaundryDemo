@@ -154,6 +154,76 @@ function service_type_label(string $type): string
     return $all[$type] ?? ucwords(str_replace('_', ' ', $type));
 }
 
+function service_modes(): array
+{
+    return [
+        'per_piece' => 'Per piece',
+        'per_kg' => 'Per kg',
+    ];
+}
+
+function service_mode_label(string $mode): string
+{
+    $all = service_modes();
+    return $all[$mode] ?? ucfirst(str_replace('_', ' ', $mode));
+}
+
+/**
+ * Map an owner-created service name back to the legacy service_type key used by
+ * older orders and reports. Unknown/custom services fall back to "other".
+ */
+function service_type_for_name(string $name): string
+{
+    $normalised = mb_strtolower(trim($name));
+    foreach (service_types() as $key => $label) {
+        if (mb_strtolower($label) === $normalised) {
+            return $key;
+        }
+    }
+    foreach (service_types() as $key => $label) {
+        if (mb_strpos($normalised, mb_strtolower($label)) !== false) {
+            return $key;
+        }
+    }
+    return 'other';
+}
+
+function active_services(): array
+{
+    return db_all('SELECT * FROM services WHERE is_active = 1 ORDER BY service_name');
+}
+
+function all_services(): array
+{
+    return db_all('SELECT * FROM services ORDER BY is_active DESC, service_name');
+}
+
+/**
+ * Effective rate for an item: an item-level override wins, otherwise the
+ * service rate is used. This is what makes a 70/kg service price by weight.
+ */
+function service_effective_rate(array $service, array $item = []): float
+{
+    $mode = (string) ($item['price_mode'] ?? $service['price_mode'] ?? 'per_piece');
+    $override = $mode === 'per_kg'
+        ? (float) ($item['rate_per_kg'] ?? 0)
+        : (float) ($item['rate_per_piece'] ?? 0);
+    return $override > 0 ? $override : (float) ($service['rate'] ?? 0);
+}
+
+/**
+ * Service label for a line on an order. New lines carry a snapshot name;
+ * legacy lines fall back to the old fixed service_type list.
+ */
+function order_item_service_label(array $item): string
+{
+    $name = trim((string) ($item['service_name'] ?? ''));
+    if ($name !== '') {
+        return $name;
+    }
+    return service_type_label((string) ($item['service_type'] ?? ''));
+}
+
 function payment_methods(): array
 {
     return [
@@ -309,18 +379,18 @@ function normalise_phone(string $phone): string
 }
 
 /**
- * Convert a posted value into a valid coordinate, or null when it is empty /
- * out of range. Used by the Google Maps location picker.
+ * Google Maps link for an address, or for a saved pin when one is available.
+ * Used by the Navigate buttons on order pages and staff queues.
  */
-function coordinate(?string $value, float $min, float $max): ?float
+function map_link(?float $lat, ?float $lng, string $address = '', bool $directions = false): string
 {
-    if ($value === null) {
-        return null;
+    $base = $directions
+        ? 'https://www.google.com/maps/dir/?api=1&destination='
+        : 'https://www.google.com/maps/search/?api=1&query=';
+    if ($lat !== null && $lng !== null) {
+        $point = number_format($lat, 7, '.', '') . ',' . number_format($lng, 7, '.', '');
+        return $base . rawurlencode($point);
     }
-    $value = trim($value);
-    if ($value === '' || !is_numeric($value)) {
-        return null;
-    }
-    $number = (float) $value;
-    return ($number >= $min && $number <= $max) ? $number : null;
+    $address = trim($address);
+    return $address === '' ? '' : $base . rawurlencode($address);
 }

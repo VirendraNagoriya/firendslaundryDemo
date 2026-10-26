@@ -5,7 +5,6 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/orders.php';
 require_once __DIR__ . '/includes/accounts.php';
-require_once __DIR__ . '/includes/location-picker.php';
 
 if (is_logged_in()) {
     redirect(home_for_role((string) current_user()['role']));
@@ -21,7 +20,6 @@ $form = [
     'city' => '',
     'pincode' => '',
 ];
-$location = ['latitude' => null, 'longitude' => null, 'place_id' => null];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
@@ -30,7 +28,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $password = raw_post('password');
     $confirm = raw_post('password_confirm');
-    $location = location_from_post();
 
     if ($form['name'] === '') {
         $errors[] = 'Please enter your name.';
@@ -56,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($errors === []) {
         try {
-            $account = db_transaction(static function () use ($form, $password, $location): array {
+            $account = db_transaction(static function () use ($form, $password): array {
                 return register_customer_account([
                     'name' => $form['name'],
                     'phone' => $form['phone'],
@@ -66,9 +63,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'landmark' => $form['landmark'],
                     'city' => $form['city'],
                     'pincode' => $form['pincode'],
-                    'latitude' => $location['latitude'],
-                    'longitude' => $location['longitude'],
-                    'place_id' => $location['place_id'],
                 ]);
             });
         } catch (Throwable $e) {
@@ -135,17 +129,6 @@ layout_start('Customer Registration', 'public');
                 <label for="address">Address</label>
                 <textarea id="address" name="address"><?= e($form['address']) ?></textarea>
             </div>
-            <?php render_location_picker([
-                'id' => 'register-location',
-                'address_id' => 'address',
-                'city_id' => 'city',
-                'pincode_id' => 'pincode',
-                'landmark_id' => 'landmark',
-                'lat' => $location['latitude'],
-                'lng' => $location['longitude'],
-                'place' => (string) ($location['place_id'] ?? ''),
-                'label' => 'Your location',
-            ]); ?>
             <div class="form-grid">
                 <div class="form-group">
                     <label for="landmark">Landmark</label>

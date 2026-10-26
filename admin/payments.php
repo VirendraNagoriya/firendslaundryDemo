@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($order === null) {
             $errors[] = 'Order not found.';
         } elseif (order_is_closed($order)) {
-            $errors[] = 'This order is already fully paid and closed.';
+            $errors[] = 'This order is delivered and fully paid, so it is closed.';
         } elseif ($amount <= 0) {
             $errors[] = 'Please enter a valid collection amount.';
         } elseif (!isset(payment_methods()[$payMethod])) {

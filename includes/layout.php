@@ -30,6 +30,7 @@ function layout_nav_items(): array
             return [
                 ['label' => 'Pickup', 'href' => 'staff/pickup.php', 'icon' => 'M4 6h16v12H4V6zm2 2v8h12V8H6zm6 6a2 2 0 110-4 2 2 0 010 4z'],
                 ['label' => 'Deliver', 'href' => 'staff/delivery.php', 'icon' => 'M3 7h11v8H3V7zm12 3h3l3 3v2h-6v-5zm-9 5a2 2 0 100-4 2 2 0 000 4zm11 0a2 2 0 100-4 2 2 0 000 4z'],
+                ['label' => 'All Orders', 'href' => 'staff/orders.php', 'icon' => 'M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2zm0 3v2h10V6H7zm0 4v2h10v-2H7zm0 4v2h7v-2H7z'],
                 ['label' => 'Dues', 'href' => 'staff/dues.php', 'icon' => 'M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-1.2c-.6-.2-1.1-.6-1.2-1.3h2c.1.3.3.5.7.5.5 0 .8-.3.8-.8 0-.5-.3-.7-.9-1-.8-.3-1.6-.7-1.6-1.7 0-.7.5-1.2 1.1-1.4V8h2v1.1c.7.2 1.1.7 1.2 1.4h-2c-.1-.3-.3-.5-.6-.5-.4 0-.7.3-.7.7 0 .4.3.6.9.8.8.3 1.7.7 1.7 1.8 0 .8-.5 1.3-1.2 1.5V17z'],
                 ['label' => 'Payments', 'href' => 'staff/payments.php', 'icon' => 'M3 6h18v12H3V6zm7 3a2 2 0 110 4 2 2 0 010-4z'],
                 ['label' => 'Add Items', 'href' => 'staff/pos.php', 'icon' => 'M11 7h2v4h4v2h-4v4h-2v-4H7v-2h4V7zm-6 14a2 2 0 110-4 2 2 0 010 4zm12 0a2 2 0 110-4 2 2 0 010 4z'],
@@ -89,6 +90,7 @@ function layout_start(string $title, string $layout = 'app'): void
             <a href="<?= e(url('index.php')) ?>#services">Services</a>
             <a href="<?= e(url('index.php')) ?>#how">How it works</a>
             <a href="<?= e(url('index.php')) ?>#contact">Contact</a>
+            <button class="btn btn-soft btn-sm install-btn" type="button" data-install-app>Install App</button>
             <?php if ($user !== null): ?>
                 <a class="btn btn-primary btn-sm" href="<?= e(url(home_for_role($user['role']))) ?>">Go to Dashboard</a>
                 <a class="btn btn-ghost btn-sm" href="<?= e(url('logout.php')) ?>">Logout</a>
@@ -132,7 +134,7 @@ function layout_start(string $title, string $layout = 'app'): void
             <button class="icon-btn menu-toggle" type="button" data-toggle-sidebar aria-label="Toggle menu">☰</button>
             <h1 class="page-title"><?= e($title) ?></h1>
             <div class="topbar-right">
-                <button class="btn btn-sm btn-soft install-btn" type="button" data-install-app hidden>Install App</button>
+                <button class="btn btn-sm btn-soft install-btn" type="button" data-install-app>Install App</button>
                 <span class="today-label"><?= e(date('d M Y')) ?></span>
                 <a class="btn btn-sm btn-ghost topbar-logout" href="<?= e(url('logout.php')) ?>">Logout</a>
             </div>
@@ -149,6 +151,7 @@ function layout_start(string $title, string $layout = 'app'): void
             <?php foreach (layout_nav_items() as $item): ?>
                 <a class="nav-link-sm<?= layout_is_active($item['href']) ? ' active' : '' ?>" href="<?= e(url($item['href'])) ?>"><?= e($item['label']) ?></a>
             <?php endforeach; ?>
+            <button class="btn btn-soft btn-sm install-btn" type="button" data-install-app>Install App</button>
             <a class="btn btn-ghost btn-sm" href="<?= e(url('logout.php')) ?>">Logout</a>
         </nav>
     </div>

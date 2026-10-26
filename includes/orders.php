@@ -19,51 +19,194 @@ function order_item_amount(array $item): float
 }
 
 /**
- * A fully paid order is closed: the bill is final and no more items may be added.
- * Orders that are still pending or only partially paid stay open, so staff can keep
- * adding the garments they receive at the customer's place.
+ * An order is closed only when it has been delivered AND fully paid.
+ * A paid order that is still being processed stays open; a delivered order with
+ * a balance stays open for collection.
  */
 function order_is_closed(array $order): bool
 {
-    return (string) ($order['payment_status'] ?? '') === 'paid';
+    return (string) ($order['status'] ?? '') === 'delivered'
+        && (string) ($order['payment_status'] ?? '') === 'paid';
 }
 
 /**
- * Whether items may still be added to / edited on this order.
+ * Items are locked once the order is closed, delivered or cancelled. This keeps
+ * the bill stable after handover even when payment is still pending.
  */
 function order_accepts_items(array $order): bool
 {
-    return !order_is_closed($order) && (string) ($order['status'] ?? '') !== 'cancelled';
+    $status = (string) ($order['status'] ?? '');
+    return !order_is_closed($order) && !in_array($status, ['delivered', 'cancelled'], true);
 }
 
-function save_order_items(int $orderId, array $items): void
+function order_items_locked(array $order): bool
+{
+    return !order_accepts_items($order);
+}
+
+/**
+ * Resolve the service for an order line. New lines post service_id; legacy
+ * lines are matched through the flat catalog or the old service_type key.
+ */
+function order_service_for_item(array $item): ?array
+{
+    $serviceId = (int) ($item['service_id'] ?? 0);
+    if ($serviceId > 0) {
+        $service = db_row('SELECT * FROM services WHERE id = ?', [$serviceId]);
+        if ($service !== null) {
+            return $service;
+        }
+    }
+
+    $name = trim((string) ($item['item_name'] ?? ''));
+    $type = (string) ($item['service_type'] ?? '');
+    if ($name !== '') {
+        $catalog = $type !== ''
+            ? db_row(
+                'SELECT s.* FROM laundry_items i JOIN services s ON s.id = i.service_id
+                 WHERE i.item_name = ? AND i.service_type = ? ORDER BY i.id LIMIT 1',
+                [$name, $type]
+            )
+            : db_row(
+                'SELECT s.* FROM laundry_items i JOIN services s ON s.id = i.service_id
+                 WHERE i.item_name = ? ORDER BY i.id LIMIT 1',
+                [$name]
+            );
+        if ($catalog !== null) {
+            return $catalog;
+        }
+    }
+
+    if ($type !== '') {
+        $label = service_type_label($type);
+        $service = db_row(
+            'SELECT * FROM services WHERE service_name = ? OR service_name LIKE ? ORDER BY id LIMIT 1',
+            [$label, $label . '%']
+        );
+        if ($service !== null) {
+            return $service;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Turn a posted item into the full row shape used by the database. The service
+ * owns the billing mode and default rate; an item can override the rate.
+ */
+function normalise_order_item(array $item): ?array
+{
+    $name = trim((string) ($item['item_name'] ?? ''));
+    if ($name === '') {
+        return null;
+    }
+
+    $service = order_service_for_item($item);
+    if ($service !== null) {
+        $serviceId = (int) $service['id'];
+        $serviceName = (string) $service['service_name'];
+        $mode = (string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
+        $catalog = db_row('SELECT * FROM laundry_items WHERE service_id = ? AND item_name = ? LIMIT 1', [$serviceId, $name]);
+        // Kg services are billed from a fixed catalog: a free-text name cannot
+        // be priced by weight, so it is rejected instead of silently saved.
+        if ($mode === 'per_kg' && $catalog === null) {
+            return null;
+        }
+        $rate = (float) ($item['rate'] ?? 0);
+        if ($rate <= 0) {
+            $rate = $catalog !== null
+                ? service_effective_rate($service, $catalog)
+                : (float) $service['rate'];
+        }
+        $qty = max(1, (int) ($item['qty'] ?? 1));
+        $weight = max(0.0, (float) ($item['weight_kg'] ?? 0));
+        $verified = $mode === 'per_kg' ? (int) ($item['weight_verified'] ?? 0) : 1;
+
+        return [
+            'service_id' => $serviceId,
+            'service_name' => $serviceName,
+            'service_type' => service_type_for_name($serviceName),
+            'item_name' => $name,
+            'price_mode' => $mode,
+            'qty' => $qty,
+            'weight_kg' => $weight,
+            'weight_verified' => $verified ? 1 : 0,
+            'weight_verified_by' => $verified ? ($item['weight_verified_by'] ?? null) : null,
+            'weight_verified_at' => $verified ? ($item['weight_verified_at'] ?? now()) : null,
+            'rate' => $rate,
+            'amount' => $mode === 'per_kg' ? round($weight * $rate, 2) : round($qty * $rate, 2),
+            'notes' => trim((string) ($item['notes'] ?? '')) !== '' ? trim((string) $item['notes']) : null,
+            'catalog_item_id' => $catalog !== null ? (int) $catalog['id'] : 0,
+        ];
+    }
+
+    // Legacy fallback so old callers/tests that only post service_type keep working.
+    $mode = (string) ($item['price_mode'] ?? 'per_piece') === 'per_kg' ? 'per_kg' : 'per_piece';
+    $rate = (float) ($item['rate'] ?? 0);
+    $qty = max(1, (int) ($item['qty'] ?? 1));
+    $weight = max(0.0, (float) ($item['weight_kg'] ?? 0));
+    $verified = $mode === 'per_kg' ? (int) ($item['weight_verified'] ?? 0) : 1;
+
+    return [
+        'service_id' => null,
+        'service_name' => null,
+        'service_type' => (string) ($item['service_type'] ?? 'wash_fold'),
+        'item_name' => $name,
+        'price_mode' => $mode,
+        'qty' => $qty,
+        'weight_kg' => $weight,
+        'weight_verified' => $verified ? 1 : 0,
+        'weight_verified_by' => $verified ? ($item['weight_verified_by'] ?? null) : null,
+        'weight_verified_at' => $verified ? ($item['weight_verified_at'] ?? now()) : null,
+        'rate' => $rate,
+        'amount' => $mode === 'per_kg' ? round($weight * $rate, 2) : round($qty * $rate, 2),
+        'notes' => trim((string) ($item['notes'] ?? '')) !== '' ? trim((string) $item['notes']) : null,
+        'catalog_item_id' => 0,
+    ];
+}
+
+function insert_order_item(int $orderId, array $item): bool
+{
+    $normalised = normalise_order_item($item);
+    if ($normalised === null) {
+        return false;
+    }
+    db_exec(
+        'INSERT INTO order_items
+            (order_id, service_id, item_name, service_name, service_type, price_mode, qty,
+             weight_kg, weight_verified, weight_verified_by, weight_verified_at, rate, amount, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+            $orderId,
+            $normalised['service_id'],
+            $normalised['item_name'],
+            $normalised['service_name'],
+            $normalised['service_type'],
+            $normalised['price_mode'],
+            $normalised['qty'],
+            $normalised['weight_kg'],
+            $normalised['weight_verified'],
+            $normalised['weight_verified_by'],
+            $normalised['weight_verified_at'],
+            $normalised['rate'],
+            $normalised['amount'],
+            $normalised['notes'],
+        ]
+    );
+    return true;
+}
+
+function save_order_items(int $orderId, array $items, bool $force = false): void
 {
     $order = db_row('SELECT status, payment_status FROM orders WHERE id = ?', [$orderId]);
-    if ($order !== null && order_is_closed($order)) {
+    if (!$force && $order !== null && !order_accepts_items($order)) {
         return;
     }
 
     db_exec('DELETE FROM order_items WHERE order_id = ?', [$orderId]);
     foreach ($items as $item) {
-        $name = trim((string) ($item['item_name'] ?? ''));
-        if ($name === '') {
-            continue;
-        }
-        db_exec(
-            'INSERT INTO order_items (order_id, item_name, service_type, price_mode, qty, weight_kg, rate, amount, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [
-                $orderId,
-                $name,
-                (string) ($item['service_type'] ?? 'wash_fold'),
-                ($item['price_mode'] ?? 'per_piece') === 'per_kg' ? 'per_kg' : 'per_piece',
-                max(1, (int) ($item['qty'] ?? 1)),
-                (float) ($item['weight_kg'] ?? 0),
-                (float) ($item['rate'] ?? 0),
-                order_item_amount($item),
-                trim((string) ($item['notes'] ?? '')) !== '' ? trim((string) $item['notes']) : null,
-            ]
-        );
+        insert_order_item($orderId, $item);
     }
 }
 
@@ -76,26 +219,9 @@ function append_order_items(int $orderId, array $items): int
 
     $added = 0;
     foreach ($items as $item) {
-        $name = trim((string) ($item['item_name'] ?? ''));
-        if ($name === '') {
-            continue;
+        if (insert_order_item($orderId, $item)) {
+            $added++;
         }
-        db_exec(
-            'INSERT INTO order_items (order_id, item_name, service_type, price_mode, qty, weight_kg, rate, amount, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [
-                $orderId,
-                $name,
-                (string) ($item['service_type'] ?? 'wash_fold'),
-                ($item['price_mode'] ?? 'per_piece') === 'per_kg' ? 'per_kg' : 'per_piece',
-                max(1, (int) ($item['qty'] ?? 1)),
-                (float) ($item['weight_kg'] ?? 0),
-                (float) ($item['rate'] ?? 0),
-                order_item_amount($item),
-                trim((string) ($item['notes'] ?? '')) !== '' ? trim((string) $item['notes']) : null,
-            ]
-        );
-        $added++;
     }
     if ($added > 0) {
         recalc_order($orderId);
@@ -103,19 +229,51 @@ function append_order_items(int $orderId, array $items): int
     return $added;
 }
 
+/**
+ * Mark kg lines as weighed by a staff member and update their amounts.
+ */
+function update_order_item_weights(int $orderId, array $weights, ?int $staffId = null): int
+{
+    $order = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
+    if ($order === null || !order_accepts_items($order)) {
+        return 0;
+    }
+
+    $updated = 0;
+    foreach ($weights as $itemId => $weight) {
+        $item = db_row('SELECT * FROM order_items WHERE id = ? AND order_id = ?', [(int) $itemId, $orderId]);
+        if ($item === null || (string) $item['price_mode'] !== 'per_kg') {
+            continue;
+        }
+        $kg = max(0.0, (float) $weight);
+        $rate = (float) $item['rate'];
+        db_exec(
+            'UPDATE order_items
+             SET weight_kg = ?, amount = ?, weight_verified = 1, weight_verified_by = ?, weight_verified_at = ?
+             WHERE id = ? AND order_id = ?',
+            [$kg, round($kg * $rate, 2), $staffId, now(), (int) $itemId, $orderId]
+        );
+        $updated++;
+    }
+
+    if ($updated > 0) {
+        recalc_order($orderId);
+    }
+    return $updated;
+}
+
 function recalc_order(int $orderId): void
 {
-    $subtotal = (float) db_value('SELECT COALESCE(SUM(amount), 0) FROM order_items WHERE order_id = ?', [$orderId], 0);
     $order = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
     if ($order === null) {
         return;
     }
+    $subtotal = (float) db_value('SELECT COALESCE(SUM(amount), 0) FROM order_items WHERE order_id = ?', [$orderId], 0);
     $discount = (float) $order['discount_amount'];
     $delivery = (float) $order['delivery_charge'];
     $tax = (float) $order['tax_amount'];
     $total = max(0, $subtotal - $discount + $delivery + $tax);
     $paid = (float) db_value('SELECT COALESCE(SUM(amount), 0) FROM payments WHERE order_id = ? AND voided_at IS NULL', [$orderId], 0);
-    $previousPaymentStatus = (string) $order['payment_status'];
 
     if ($total <= 0) {
         $paymentStatus = 'pending';
@@ -132,14 +290,32 @@ function recalc_order(int $orderId): void
         [$subtotal, $total, min($paid, $total), $paymentStatus, $orderId]
     );
 
-    if ($previousPaymentStatus !== $paymentStatus) {
-        if ($paymentStatus === 'paid') {
-            log_status($orderId, (string) $order['status'], (string) $order['status'], 'closed', 'Order closed - payment completed');
-            audit('order.closed', 'order', (string) $orderId, 'Order ' . $order['order_number'] . ' closed after full payment');
-        } elseif ($previousPaymentStatus === 'paid') {
-            log_status($orderId, (string) $order['status'], (string) $order['status'], 'reopened', 'Order reopened - balance outstanding');
-            audit('order.reopened', 'order', (string) $orderId, 'Order ' . $order['order_number'] . ' reopened');
-        }
+    $after = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
+    if ($after !== null) {
+        log_order_closure($orderId, $order, $after);
+    }
+}
+
+/**
+ * Write the closed/reopened history entry only when the combined
+ * delivered+paid state actually changes.
+ */
+function log_order_closure(int $orderId, array $before, array $after): void
+{
+    $wasClosed = order_is_closed($before);
+    $isClosed = order_is_closed($after);
+    if ($wasClosed === $isClosed) {
+        return;
+    }
+
+    $status = (string) ($after['status'] ?? '');
+    $number = (string) ($after['order_number'] ?? $orderId);
+    if ($isClosed) {
+        log_status($orderId, $status, $status, 'closed', 'Order closed - delivered and fully paid');
+        audit('order.closed', 'order', (string) $orderId, 'Order ' . $number . ' closed after delivery and full payment');
+    } else {
+        log_status($orderId, $status, $status, 'reopened', 'Order reopened - delivered and paid requirement no longer met');
+        audit('order.reopened', 'order', (string) $orderId, 'Order ' . $number . ' reopened');
     }
 }
 
@@ -182,17 +358,29 @@ function set_order_status(int $orderId, string $status, string $action, ?string 
         $fields[] = 'delivery_completed_at = ?';
         $params[] = now();
     }
+    if ($status === 'delivered' && $order['delivery_assigned_at'] === null) {
+        $fields[] = 'delivery_assigned_at = ?';
+        $params[] = now();
+    }
     $params[] = $orderId;
     db_exec('UPDATE orders SET ' . implode(', ', $fields) . ' WHERE id = ?', $params);
     log_status($orderId, (string) $order['status'], $status, $action, $notes);
+
+    $after = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
+    if ($after !== null) {
+        log_order_closure($orderId, $order, $after);
+    }
 }
 
 /**
  * Shared staff queues: any pickup/delivery staff member may handle any open order.
- * Whoever handles it becomes the assigned staff member, so the activity log and
- * the staff counters always show the person who actually did the work.
+ * The person who performs the action becomes the assignee for that stage.
+ *
+ * $stage is "pickup", "delivery" or "auto". "Ready for Delivery" is treated as
+ * the start of the delivery workflow, so the person clicking it becomes the
+ * delivery assignee.
  */
-function claim_order_for_staff(int $orderId, int $staffId): void
+function claim_order_for_staff(int $orderId, int $staffId, string $stage = 'auto'): void
 {
     $order = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
     if ($order === null) {
@@ -202,29 +390,33 @@ function claim_order_for_staff(int $orderId, int $staffId): void
     $user = current_user();
     $name = (string) ($user['name'] ?? 'Staff');
     $status = (string) $order['status'];
+    if ($stage === 'auto') {
+        $stage = in_array($status, ['ready_for_delivery', 'out_for_delivery', 'delivered'], true) ? 'delivery' : 'pickup';
+    }
 
-    if (in_array($status, ['new', 'pickup_assigned', 'picked_up', 'processing'], true)) {
-        if ((int) $order['pickup_staff_id'] === $staffId) {
+    if ($stage === 'delivery') {
+        if ((int) $order['delivery_staff_id'] === $staffId && $order['delivery_assigned_at'] !== null) {
             return;
         }
         db_exec(
-            'UPDATE orders SET pickup_staff_id = ?, pickup_assigned_at = COALESCE(pickup_assigned_at, ?) WHERE id = ?',
+            'UPDATE orders SET delivery_staff_id = ?, delivery_assigned_at = COALESCE(delivery_assigned_at, ?) WHERE id = ?',
             [$staffId, now(), $orderId]
         );
-        if ($status === 'new') {
-            set_order_status($orderId, 'pickup_assigned', 'pickup_assigned', 'Assigned to ' . $name . ' from the shared pickup queue');
-        } else {
-            log_status($orderId, $status, $status, 'assignment_updated', 'Pickup assigned to ' . $name);
-        }
+        log_status($orderId, $status, $status, 'assignment_updated', 'Delivery assigned to ' . $name);
         return;
     }
 
-    if (in_array($status, ['ready_for_delivery', 'out_for_delivery'], true)) {
-        if ((int) $order['delivery_staff_id'] === $staffId) {
-            return;
-        }
-        db_exec('UPDATE orders SET delivery_staff_id = ? WHERE id = ?', [$staffId, $orderId]);
-        log_status($orderId, $status, $status, 'assignment_updated', 'Delivery assigned to ' . $name);
+    if ((int) $order['pickup_staff_id'] === $staffId && $order['pickup_assigned_at'] !== null) {
+        return;
+    }
+    db_exec(
+        'UPDATE orders SET pickup_staff_id = ?, pickup_assigned_at = COALESCE(pickup_assigned_at, ?) WHERE id = ?',
+        [$staffId, now(), $orderId]
+    );
+    if ($status === 'new') {
+        set_order_status($orderId, 'pickup_assigned', 'pickup_assigned', 'Assigned to ' . $name . ' from the shared pickup queue');
+    } else {
+        log_status($orderId, $status, $status, 'assignment_updated', 'Pickup assigned to ' . $name);
     }
 }
 
@@ -236,9 +428,10 @@ function create_order(array $data, array $items, ?int $createdBy = null): int
         (order_number, customer_id, source, pricing_mode, status, payment_status, order_date,
          scheduled_pickup_date, scheduled_delivery_date, contact_name, contact_phone, delivery_address,
          pickup_latitude, pickup_longitude, pickup_place_id,
-         pickup_staff_id, delivery_staff_id, subtotal, discount_amount, delivery_charge, tax_amount,
+         pickup_staff_id, delivery_staff_id, pickup_assigned_at, delivery_assigned_at,
+         subtotal, discount_amount, delivery_charge, tax_amount,
          total_amount, paid_amount, notes, staff_notes, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, 0, ?, ?, ?)';
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0, 0, ?, ?, ?)';
     $params = [
         'TMP',
         (int) $data['customer_id'],
@@ -257,6 +450,8 @@ function create_order(array $data, array $items, ?int $createdBy = null): int
         $data['pickup_place_id'] ?? null,
         $data['pickup_staff_id'] ?? null,
         $data['delivery_staff_id'] ?? null,
+        !empty($data['pickup_staff_id']) ? now() : null,
+        !empty($data['delivery_staff_id']) ? now() : null,
         (float) ($data['discount_amount'] ?? 0),
         (float) ($data['delivery_charge'] ?? 0),
         (float) ($data['tax_amount'] ?? 0),
@@ -266,7 +461,9 @@ function create_order(array $data, array $items, ?int $createdBy = null): int
     ];
     $orderId = db_insert($sql, $params);
     db_exec('UPDATE orders SET order_number = ? WHERE id = ?', [order_number_for($orderId), $orderId]);
-    save_order_items($orderId, $items);
+    // A seeded/imported order may already be delivered or cancelled, so items
+    // must be written even though the order is no longer editable.
+    save_order_items($orderId, $items, in_array((string) ($data['status'] ?? 'new'), ['delivered', 'cancelled'], true));
     recalc_order($orderId);
     log_status($orderId, null, (string) ($data['status'] ?? 'new'), 'created', 'Order created');
     audit('order.create', 'order', (string) $orderId, 'Order ' . order_number_for($orderId));
@@ -283,9 +480,6 @@ function update_order(int $orderId, array $data): void
         'contact_name = ?',
         'contact_phone = ?',
         'delivery_address = ?',
-        'pickup_latitude = ?',
-        'pickup_longitude = ?',
-        'pickup_place_id = ?',
         'pickup_staff_id = ?',
         'delivery_staff_id = ?',
         'discount_amount = ?',
@@ -302,9 +496,6 @@ function update_order(int $orderId, array $data): void
         $data['contact_name'],
         $data['contact_phone'],
         $data['delivery_address'],
-        $data['pickup_latitude'] ?? null,
-        $data['pickup_longitude'] ?? null,
-        $data['pickup_place_id'] ?? null,
         $data['pickup_staff_id'] ?? null,
         $data['delivery_staff_id'] ?? null,
         (float) ($data['discount_amount'] ?? 0),
@@ -346,9 +537,17 @@ function assign_staff(int $orderId, ?int $pickupStaffId, ?int $deliveryStaffId):
     if ($order === null) {
         return;
     }
+    $pickupAssignedAt = $order['pickup_assigned_at'];
+    if ($pickupStaffId !== null && $pickupAssignedAt === null) {
+        $pickupAssignedAt = now();
+    }
+    $deliveryAssignedAt = $order['delivery_assigned_at'] ?? null;
+    if ($deliveryStaffId !== null && $deliveryAssignedAt === null) {
+        $deliveryAssignedAt = now();
+    }
     db_exec(
-        'UPDATE orders SET pickup_staff_id = ?, delivery_staff_id = ? WHERE id = ?',
-        [$pickupStaffId, $deliveryStaffId, $orderId]
+        'UPDATE orders SET pickup_staff_id = ?, delivery_staff_id = ?, pickup_assigned_at = ?, delivery_assigned_at = ? WHERE id = ?',
+        [$pickupStaffId, $deliveryStaffId, $pickupAssignedAt, $deliveryAssignedAt, $orderId]
     );
     if ($pickupStaffId !== null && $order['status'] === 'new') {
         set_order_status($orderId, 'pickup_assigned', 'pickup_assigned', 'Pickup staff assigned');

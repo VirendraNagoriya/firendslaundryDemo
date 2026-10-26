@@ -6,7 +6,6 @@ require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
 require_once dirname(__DIR__) . '/includes/order-items.php';
 require_once dirname(__DIR__) . '/includes/order-form-fields.php';
-require_once dirname(__DIR__) . '/includes/location-picker.php';
 
 $user = require_admin();
 $orderId = query_int('id');
@@ -21,7 +20,7 @@ $catalog = active_catalog();
 $pickupStaff = staff_list('pickup');
 $deliveryStaff = staff_list('delivery');
 $items = db_all('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', [$orderId]);
-$closed = order_is_closed($order);
+$closed = order_items_locked($order);
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -42,10 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'notes' => post('notes'),
         'staff_notes' => post('staff_notes'),
     ];
-    $location = location_from_post('pickup_');
-    $form['pickup_latitude'] = $location['latitude'];
-    $form['pickup_longitude'] = $location['longitude'];
-    $form['pickup_place_id'] = $location['place_id'];
 
     if ($form['contact_name'] === '') {
         $errors[] = 'Please enter the customer name.';
@@ -59,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $newItems = [];
     if (!$closed) {
-        $newItems = collect_items_from_post();
+        $newItems = collect_items_from_post(true);
         if ($newItems === []) {
             $errors[] = 'Please add at least one item to the order.';
         }
@@ -81,8 +76,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $form['pickup_staff_id'] !== '' ? (int) $form['pickup_staff_id'] : null,
                         $form['delivery_staff_id'] !== '' ? (int) $form['delivery_staff_id'] : null
                     );
-                } elseif ($form['delivery_staff_id'] !== '' && (int) $form['delivery_staff_id'] !== (int) $order['delivery_staff_id']) {
-                    db_exec('UPDATE orders SET delivery_staff_id = ? WHERE id = ?', [(int) $form['delivery_staff_id'], $orderId]);
+                } elseif ((int) $form['delivery_staff_id'] !== (int) $order['delivery_staff_id']) {
+                    assign_staff(
+                        $orderId,
+                        $form['pickup_staff_id'] !== '' ? (int) $form['pickup_staff_id'] : null,
+                        $form['delivery_staff_id'] !== '' ? (int) $form['delivery_staff_id'] : null
+                    );
                     log_status($orderId, (string) $order['status'], (string) $order['status'], 'assignment_updated', 'Delivery staff changed');
                 }
             });

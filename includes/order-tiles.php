@@ -89,7 +89,7 @@ function order_tile(array $order, array $options = []): void
                             <span class="badge <?= e(status_badge((string) ($order['payment_status'] ?? 'pending'))) ?>"><?= e(payment_status_label((string) ($order['payment_status'] ?? 'pending'))) ?></span>
                         <?php endif; ?>
                         <?php if ($closed): ?>
-                            <span class="badge badge-success" title="Fully paid - no more items can be added">Closed</span>
+                            <span class="badge badge-success" title="Delivered and fully paid - no more items can be added">Closed</span>
                         <?php endif; ?>
                     </div>
                     <div class="tile-cust">

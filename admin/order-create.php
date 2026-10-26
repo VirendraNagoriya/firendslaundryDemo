@@ -5,7 +5,6 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
 require_once dirname(__DIR__) . '/includes/order-items.php';
-require_once dirname(__DIR__) . '/includes/location-picker.php';
 
 $user = require_admin();
 
@@ -28,9 +27,6 @@ $order = [
     'tax_amount' => 0,
     'notes' => '',
     'staff_notes' => '',
-    'pickup_latitude' => '',
-    'pickup_longitude' => '',
-    'pickup_place_id' => '',
 ];
 $items = [];
 
@@ -50,20 +46,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Please enter the delivery address.';
     }
 
-    $items = collect_items_from_post();
-    $location = location_from_post('pickup_');
+    $items = collect_items_from_post(true);
 
     if ($errors === []) {
         try {
-            $orderId = db_transaction(static function () use ($order, $items, $location, $user): int {
+            $orderId = db_transaction(static function () use ($order, $items, $user): int {
                 $customerId = find_or_create_customer([
                     'name' => $order['contact_name'],
                     'phone' => $order['contact_phone'],
                     'email' => null,
                     'address' => $order['delivery_address'],
-                    'latitude' => $location['latitude'],
-                    'longitude' => $location['longitude'],
-                    'place_id' => $location['place_id'],
                 ], (int) $user['id']);
 
                 $tax = (float) $order['tax_amount'];
@@ -86,9 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'contact_name' => $order['contact_name'],
                     'contact_phone' => $order['contact_phone'],
                     'delivery_address' => $order['delivery_address'],
-                    'pickup_latitude' => $location['latitude'],
-                    'pickup_longitude' => $location['longitude'],
-                    'pickup_place_id' => $location['place_id'],
                     'pickup_staff_id' => $order['pickup_staff_id'] !== '' ? (int) $order['pickup_staff_id'] : null,
                     'delivery_staff_id' => $order['delivery_staff_id'] !== '' ? (int) $order['delivery_staff_id'] : null,
                     'discount_amount' => (float) $order['discount_amount'],
@@ -140,18 +129,6 @@ layout_start('New Order', 'app');
                 <label for="delivery_address" class="required">Delivery address</label>
                 <textarea id="delivery_address" name="delivery_address" data-lookup-field="address" required><?= e((string) $order['delivery_address']) ?></textarea>
             </div>
-            <?php render_location_picker([
-                'id' => 'order-create-location',
-                'address_id' => 'delivery_address',
-                'lat_name' => 'pickup_latitude',
-                'lng_name' => 'pickup_longitude',
-                'place_name' => 'pickup_place_id',
-                'lat' => (string) $order['pickup_latitude'],
-                'lng' => (string) $order['pickup_longitude'],
-                'place' => (string) $order['pickup_place_id'],
-                'label' => 'Customer location',
-                'height' => 240,
-            ]); ?>
 
             <div class="lookup-box" data-lookup-results hidden></div>
             <div id="customer-dues-panel" class="alert alert-warning" data-customer-dues hidden style="margin-top:10px;">

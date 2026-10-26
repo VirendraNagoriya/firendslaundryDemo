@@ -17,10 +17,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $order = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
         if ($order === null) {
             $errors[] = 'Order not found.';
-        } elseif (!staff_may_collect($staffId, $order)) {
+        } elseif (!staff_may_collect($staffId, $order) && (string) $order['status'] !== 'delivered') {
             $errors[] = 'This invoice is not linked to any of your customers.';
         } elseif (order_is_closed($order)) {
-            $errors[] = 'This order is already fully paid and closed.';
+            $errors[] = 'This order is delivered and fully paid, so it is closed.';
         } else {
             $amount = (float) post('amount');
             $method = post('method');
@@ -43,6 +43,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+$deliveredPending = db_all(
+    "SELECT o.*, c.name AS customer_name
+     FROM orders o
+     JOIN customers c ON c.id = o.customer_id
+     WHERE o.status = 'delivered' AND o.payment_status <> 'paid'
+     ORDER BY o.delivery_completed_at DESC, o.id DESC
+     LIMIT 100"
+);
 
 $duesCustomers = staff_customer_dues($staffId);
 $total = 0.0;
@@ -116,4 +125,34 @@ layout_start('Dues', 'app');
         <?php endif; ?>
     </div>
 </div>
+
+<?php if ($deliveredPending !== []): ?>
+    <div class="panel">
+        <div class="panel-head">
+            <h2>Delivered · Payment Pending</h2>
+            <span class="subtle">Any staff member can collect these</span>
+        </div>
+        <div class="panel-body tight">
+            <?php foreach ($deliveredPending as $invoice): ?>
+                <?php
+                $invoiceDue = max(0.0, (float) $invoice['total_amount'] - (float) $invoice['paid_amount']);
+                $actions = '<form method="post">'
+                    . csrf_field()
+                    . '<input type="hidden" name="action" value="collect_dues">'
+                    . '<input type="hidden" name="order_id" value="' . e((string) $invoice['id']) . '">'
+                    . '<input type="number" name="amount" min="0" step="0.01" value="' . e(number_format($invoiceDue, 2, '.', '')) . '" placeholder="Amount">'
+                    . '<select name="method">' . payment_method_options() . '</select>'
+                    . '<input type="text" name="reference_no" placeholder="Ref">'
+                    . '<button class="btn btn-sm btn-green" type="submit">Collect</button>'
+                    . '</form>';
+                echo order_tile($invoice, [
+                    'note' => 'Delivered ' . format_datetime((string) $invoice['delivery_completed_at'])
+                        . ' · ' . order_items_summary((int) $invoice['id']),
+                    'actions' => $actions,
+                ]);
+                ?>
+            <?php endforeach; ?>
+        </div>
+    </div>
+<?php endif; ?>
 <?php layout_end(); ?>

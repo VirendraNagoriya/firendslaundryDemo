@@ -35,26 +35,14 @@ No Composer / npm dependencies.
    ```
 
    `migrate.php` is also the upgrade script: re-running it on an older database adds the
-   unified `staff` role, converts the former `pickup` / `delivery` accounts, and adds the
-   `latitude` / `longitude` / `place_id` columns used by the map picker.
+   unified `staff` role, converts the former `pickup` / `delivery` accounts, creates the
+   owner-managed `services` table while mapping the old catalog and existing order lines to it,
+   and adds the weight-verification columns and the `delivery_assigned_at` timestamp. The legacy
+   `latitude` / `longitude` / `place_id` columns are kept so any previously saved pins still
+   power the **Navigate** links.
+   **Back up the database before upgrading a live site.**
 
 5. Open `http://localhost/LaundryFriendsDemo/` in the browser.
-
-### Google Maps location picker (optional but recommended)
-
-1. In [Google Cloud Console](https://console.cloud.google.com/) create (or select) a project and
-   enable **Maps JavaScript API** and **Places API**.
-2. Create an API key. Under *Application restrictions* choose **HTTP referrers** and add your
-   site, e.g. `https://your-domain.com/*` (and `http://localhost/LaundryFriendsDemo/*` for local
-   testing). Under *API restrictions* allow only the two APIs above.
-3. Sign in as the owner → **Admin → Settings → Google Maps JavaScript API key**, paste the key and
-   save.
-
-Customers, staff and the owner can then search an address, tap the map, drag the pin or press
-**Use my current location**; the address, city, PIN code, latitude, longitude and Google place id
-are saved. Browser geolocation needs **HTTPS** in production. Without a key the form still works:
-manual address entry and the *current location* pin are saved, and a short notice explains that
-the map is not configured.
 
 ### Error handling and logs
 
@@ -112,14 +100,18 @@ the intended role (Customer / Staff / Admin).
 - Marketing landing page with services, pricing and a "Schedule a Pickup" call to action.
 - Guest pickup booking creates the customer account and logs the guest in.
 - Customer registration and login (customer / staff / admin tabs).
-- **Google Maps address picker** on registration, pickup booking, profile and admin order
-  create/edit: search an address, tap/drag a pin or use the phone's current location. The pin is
-  stored on the customer and on the order, and staff get a one-tap **Navigate** link.
+- Address fields on registration, pickup booking, profile and admin order create/edit. Every
+  order and staff queue has a one-tap **Navigate** link that opens Google Maps directions for the
+  saved address (or a previously saved pin).
 
 **Customer portal** (`customer/`)
 - Dashboard with order counters, pending amount and recent orders.
 - Schedule a pickup (per-piece *and* per-kg items, address, preferred slot, notes).
-- Order list with live status, order detail page with the progress timeline and price breakdown.
+- **Service-first item entry**: pick a service, then tap one of its catalog items (pant, shirt,
+  curtain…). For a kg service only that service's items can be added, and the customer's weight is
+  clearly labelled as an estimate – the pickup boy measures the actual kg.
+- Order list with live status, order detail page with the progress timeline and price breakdown,
+  including **Estimated** vs **Verified** weight badges on per-kg lines.
 - Profile update and password change.
 
 **Admin / owner** (`admin/`)
@@ -136,6 +128,11 @@ the intended role (Customer / Staff / Admin).
 - Customers: the list shows only the name, mobile number and invoice count – tap a row to see the
   full detail (e-mail, address, billed, due, last order) with *View orders* / *Collect dues*
   shortcuts. Staff accounts, service catalog and application settings.
+- **Services & Items** (`admin/catalog.php`): the owner creates services (e.g. *Wash & Fold*,
+  *Wash & Iron*, *Dry Clean*, *Wash & Fold (kg)*), chooses **per piece** or **per kg** billing, sets
+  the service rate, and maps catalog items (Shirt, Trouser, Curtain…) to each service. The same item
+  name may exist in several services at a different rate. Services and items can be edited,
+  disabled and re-enabled; a disabled service hides its items from every picker.
 - Payments: pending collection as expandable tiles with an in-tile cash / UPI / card collect form
   and the per-invoice **Customer Dues**; the history view is a compact row list with method,
   date and amount filters.
@@ -155,35 +152,53 @@ the intended role (Customer / Staff / Admin).
   counters show what is left to claim.
 - **Deliver**: a **shared delivery queue** – every staff member sees every order that is ready for
   delivery or out for delivery, assigned or not. Starting the delivery or marking it *delivered*
-  assigns it to that staff member, with the same unassigned / mine counters.
+  assigns it to that staff member, with the same unassigned / mine counters. The queue has
+  **Open**, **Delivered** and **Payment Pending** tabs; a delivered order with an unpaid balance
+  stays in *Payment Pending* and any staff member can collect the balance there.
+- **All Orders** (`staff/orders.php`): the shared order book – every order, assigned or not, with
+  search, status / payment filters and **All / Open / Delivered / Payment Pending** tabs. Each tile
+  links to the POS, the map, or the collect form for a delivered pending balance.
 - **Dues** (`staff/dues.php`): pending bills of the customers on the delivery list, one expandable
-  tile per invoice with a collect form – only invoices linked to the staff member's own customers.
+  tile per invoice with a collect form. A **Delivered · Payment Pending** section lists delivered
+  orders that still owe money, and any staff member can collect those.
 - **Payments**: the staff member's own collection history (today's total, recent transactions).
-- **Add Items (POS)**: open any order that is still open (assigned or not), add the garments that
-  were handed over (catalog chips, per-piece or per-kg). Items already on the order can only be
-  added to, never deleted by staff – the order total is recalculated automatically.
+- **Add Items (POS)**: open any order that is still open (assigned or not) and add the garments
+  that were handed over using the service-first picker (per-piece or per-kg). For kg services only
+  the catalog items of that service can be added. The **Verify actual weight** panel lets the
+  pickup boy replace the customer's estimate with the measured kg and the bill recalculates
+  automatically. Items already on the order can only be added to, never deleted by staff.
 - **My Details**: read-only identity card (the owner maintains it).
 
-**Paid orders are closed**
-- As soon as an order is **fully paid** it is *closed*: the bill is final and no more items can be
-  added or edited (staff pickup, delivery and POS show it read-only; admin order-edit shows a
-  read-only item table). Payments are blocked too, because there is nothing left to collect.
-- **Pending and partially paid** orders stay open, so staff can keep adding garments at the
-  customer's place and collect the balance later. Collecting the last rupee closes the order.
+**Delivered + paid orders are closed**
+- An order is *closed* only when it is **delivered** **and** **fully paid**. The bill is then final:
+  no more items can be added or edited (staff pickup, delivery, All Orders and POS show it
+  read-only; admin order-edit shows a read-only item table) and payments are blocked.
+- A **delivered but unpaid** (or partially paid) order is *not* closed – its items are locked, but
+  it stays visible in the delivered / payment-pending lists so any staff member can collect the
+  balance. The last payment closes it.
+- **Open** and **picked up** orders stay editable, so staff can keep adding garments at the
+  customer's place and collect later.
 - The owner can still change the customer, dates, staff, discount and delivery charge of a closed
-  order. **Mark Unpaid** on the order page voids the payments, reopens the order and unlocks the
-  items again. Every close / reopen is written to the order activity log and the audit trail.
+  order. **Mark Unpaid** on the order page voids the payments and reopens the balance, but a
+  delivered order keeps its items locked. Every close / reopen is written to the order activity
+  log and the audit trail.
 
 **Mobile / PWA**
 - Installable web app (`manifest.webmanifest` + `sw.js`): "Add to home screen" on Android and
   "Install app" on desktop Chrome, with app icons and a service worker that caches the shell.
+- An **Install App** button is shown in the public site header and in every signed-in layout
+  (customer, staff and admin). It uses the native install prompt where the browser offers one and
+  otherwise shows short instructions (browser menu on Android/desktop, Share → *Add to Home
+  Screen* on iPhone/iPad).
 - Mobile-first layout with a bottom navigation bar for staff and customers, 44 px touch targets
   and safe-area padding; denser panels, headings and gaps on phones.
 - **Compact order tiles everywhere** (dashboard, orders, pickup / delivery queues, pickup,
   delivery, POS, dues, payments, customers, report, my orders): the summary line only shows the
   essentials – tap to expand the full detail (address, dates, staff, items, money, actions).
-- **Item picker**: bottom sheet with quick picks, steppers for pieces / kilos and a sticky
-  subtotal bar instead of a long item table.
+- **Item picker**: service-first bottom sheet with quick picks filtered to the chosen service,
+  steppers for pieces / kilos and a sticky subtotal bar instead of a long item table. Kg services
+  only accept their own catalog items and show the "weight will be measured / verified by the
+  pickup boy" hint.
 - **Mobile number is the primary identity**: sign in with e-mail *or* mobile (with or without the
   `0` / `+91` / `91` prefix), customer and staff search by mobile, and one customer account per
   mobile number – a repeat booking on the same number never creates a duplicate customer.
@@ -209,11 +224,11 @@ LaundryFriendsDemo/
 ├── admin/                  back office (orders, dues, staff, payments, reports, backup…)
 │   └── reports/            daily report + print view
 ├── customer/               customer portal
-├── staff/                  pickup, delivery, dues, payments, POS (add items)
+├── staff/                  pickup, delivery, all orders, dues, payments, POS (add items)
 ├── config/                 config.php, db.php, auth.php, helpers.php, errors.php
 ├── database/               schema.sql, migrate.php, seed.php, backup.php, restore.php, backups/
 ├── includes/               shared layout, order logic, order items, order tiles, reports,
-│                           backup engine, accounts, Google Maps location picker
+│                           backup engine, accounts
 ├── assets/                 css/app.css, js/app.js, icons/
 └── storage/logs/           app.log (created automatically at runtime)
 ```

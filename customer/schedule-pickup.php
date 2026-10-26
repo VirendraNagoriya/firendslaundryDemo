@@ -6,7 +6,6 @@ require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
 require_once dirname(__DIR__) . '/includes/order-items.php';
 require_once dirname(__DIR__) . '/includes/accounts.php';
-require_once dirname(__DIR__) . '/includes/location-picker.php';
 
 $loggedIn = current_user();
 $isGuest = true;
@@ -58,18 +57,12 @@ $form = [
     'scheduled_pickup_date' => today(),
     'notes' => '',
 ];
-$location = [
-    'latitude' => isset($customer['latitude']) && $customer['latitude'] !== null ? (float) $customer['latitude'] : null,
-    'longitude' => isset($customer['longitude']) && $customer['longitude'] !== null ? (float) $customer['longitude'] : null,
-    'place_id' => (string) ($customer['place_id'] ?? ''),
-];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
     foreach (array_keys($form) as $key) {
         $form[$key] = post($key);
     }
-    $location = location_from_post();
 
     if (!$isGuest) {
         // The signed-in booking form only collects pickup details, so identity
@@ -108,14 +101,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    $items = collect_items_from_post();
+    $items = collect_items_from_post(false);
     if ($items === []) {
         $errors[] = 'Please add at least one item to the order.';
     }
 
     if ($errors === []) {
         try {
-            $result = db_transaction(static function () use ($isGuest, $form, $customer, $loggedIn, $location, $items, $taxPercent, $deliveryCharge): array {
+            $result = db_transaction(static function () use ($isGuest, $form, $customer, $loggedIn, $items, $taxPercent, $deliveryCharge): array {
                 if ($isGuest) {
                     $account = register_customer_account([
                         'name' => $form['name'],
@@ -126,9 +119,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'landmark' => $form['landmark'],
                         'city' => $form['city'],
                         'pincode' => $form['pincode'],
-                        'latitude' => $location['latitude'],
-                        'longitude' => $location['longitude'],
-                        'place_id' => $location['place_id'],
                     ]);
                     $userId = $account['user_id'];
                     $customerId = $account['customer_id'];
@@ -137,10 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $userId = (int) $loggedIn['id'];
                     db_exec(
                         'UPDATE customers
-                         SET name = ?, phone = ?, email = ?, address = ?, landmark = ?, city = ?, pincode = ?,
-                             latitude = COALESCE(?, latitude),
-                             longitude = COALESCE(?, longitude),
-                             place_id = COALESCE(NULLIF(?, \'\'), place_id)
+                         SET name = ?, phone = ?, email = ?, address = ?, landmark = ?, city = ?, pincode = ?
                          WHERE id = ?',
                         [
                             $form['name'],
@@ -150,9 +137,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $form['landmark'],
                             $form['city'],
                             $form['pincode'],
-                            $location['latitude'],
-                            $location['longitude'],
-                            $location['place_id'],
                             $customerId,
                         ]
                     );
@@ -173,9 +157,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'contact_name' => $form['name'],
                     'contact_phone' => $form['phone'],
                     'delivery_address' => trim($form['address'] . ', ' . $form['landmark'] . ', ' . $form['city'] . ' - ' . $form['pincode'], ', '),
-                    'pickup_latitude' => $location['latitude'],
-                    'pickup_longitude' => $location['longitude'],
-                    'pickup_place_id' => $location['place_id'],
                     'discount_amount' => 0,
                     'delivery_charge' => $deliveryCharge,
                     'tax_amount' => $tax,
@@ -280,21 +261,10 @@ layout_start('Schedule a Pickup', 'customer');
                 <label for="address" class="required">Pickup address</label>
                 <textarea id="address" name="address" required><?= e($form['address']) ?></textarea>
             </div>
-            <?php render_location_picker([
-                'id' => 'pickup-location',
-                'address_id' => 'address',
-                'city_id' => 'city',
-                'pincode_id' => 'pincode',
-                'landmark_id' => 'landmark',
-                'lat' => $location['latitude'],
-                'lng' => $location['longitude'],
-                'place' => (string) ($location['place_id'] ?? ''),
-                'label' => 'Pickup location',
-            ]); ?>
 
             <h3 class="mt-1">3. Items to be washed</h3>
             <p class="subtle">Tap a service to add it, then set how many pieces or how many kilos. Our team confirms the final weight at pickup.</p>
-            <?php render_item_picker([], $catalog, ['intro' => 'Tap + Add item and pick from the list - it takes seconds.']); ?>
+            <?php render_item_picker([], $catalog, ['intro' => 'Tap + Add item and choose a service. Weight is an estimate - the pickup boy measures and verifies the actual kg.']); ?>
 
             <div class="form-grid mt-1">
                 <div class="form-group">

@@ -46,28 +46,48 @@ $delivery2Id = seed_user('staff', 'Anita Desai', '9000000006', 'anita@laundryfri
 
 echo "Users ready.\n";
 
-$catalog = [
-    ['Shirt', 'wash_iron', 'per_piece', 15, 120],
-    ['Trouser', 'wash_iron', 'per_piece', 20, 160],
-    ['T-Shirt', 'wash_fold', 'per_piece', 10, 80],
-    ['Jeans', 'wash_iron', 'per_piece', 25, 200],
-    ['Dress / Saree', 'dry_clean', 'per_piece', 90, 600],
-    ['Suit / Blazer', 'dry_clean', 'per_piece', 120, 800],
-    ['Curtain', 'wash_fold', 'per_kg', 0, 90],
-    ['Bed Cover', 'wash_fold', 'per_kg', 0, 110],
-    ['Mixed Laundry (kg)', 'wash_fold', 'per_kg', 0, 60],
-    ['Sneakers', 'shoe_clean', 'per_piece', 200, 350],
-    ['Blanket', 'wash_fold', 'per_kg', 0, 80],
-    ['Towel Set', 'wash_fold', 'per_piece', 12, 60],
+$services = [
+    ['Wash & Iron', 'per_piece', 15],
+    ['Wash & Fold', 'per_piece', 10],
+    ['Wash & Fold (kg)', 'per_kg', 60],
+    ['Dry Clean', 'per_piece', 90],
+    ['Shoe Cleaning', 'per_piece', 200],
 ];
 
-foreach ($catalog as [$name, $service, $mode, $perPiece, $perKg]) {
+$serviceIds = [];
+foreach ($services as [$serviceName, $mode, $rate]) {
+    $existing = db_row('SELECT id FROM services WHERE service_name = ?', [$serviceName]);
+    $serviceIds[$serviceName] = $existing !== null
+        ? (int) $existing['id']
+        : db_insert(
+            'INSERT INTO services (service_name, price_mode, rate, is_active) VALUES (?, ?, ?, 1)',
+            [$serviceName, $mode, $rate]
+        );
+}
+
+$catalog = [
+    ['Shirt', 'Wash & Iron', 'wash_iron', 'per_piece', 15, 0],
+    ['Trouser', 'Wash & Iron', 'wash_iron', 'per_piece', 20, 0],
+    ['Jeans', 'Wash & Iron', 'wash_iron', 'per_piece', 25, 0],
+    ['T-Shirt', 'Wash & Fold', 'wash_fold', 'per_piece', 10, 0],
+    ['Towel Set', 'Wash & Fold', 'wash_fold', 'per_piece', 12, 0],
+    ['Curtain', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 90],
+    ['Bed Cover', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 110],
+    ['Mixed Laundry (kg)', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60],
+    ['Blanket', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 80],
+    ['Dress / Saree', 'Dry Clean', 'dry_clean', 'per_piece', 90, 0],
+    ['Suit / Blazer', 'Dry Clean', 'dry_clean', 'per_piece', 120, 0],
+    ['Sneakers', 'Shoe Cleaning', 'shoe_clean', 'per_piece', 200, 0],
+];
+
+foreach ($catalog as [$name, $serviceName, $serviceType, $mode, $perPiece, $perKg]) {
+    $serviceId = $serviceIds[$serviceName];
     db_exec(
-        'INSERT INTO laundry_items (item_name, service_type, price_mode, rate_per_piece, rate_per_kg, is_active)
-         VALUES (?, ?, ?, ?, ?, 1)
+        'INSERT INTO laundry_items (service_id, item_name, service_type, price_mode, rate_per_piece, rate_per_kg, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, 1)
          ON DUPLICATE KEY UPDATE service_type = VALUES(service_type), price_mode = VALUES(price_mode),
          rate_per_piece = VALUES(rate_per_piece), rate_per_kg = VALUES(rate_per_kg), is_active = 1',
-        [$name, $service, $mode, $perPiece, $perKg]
+        [$serviceId, $name, $serviceType, $mode, $perPiece, $perKg]
     );
 }
 echo "Catalog ready.\n";
@@ -108,7 +128,7 @@ $demoOrders = [
         'pickup' => $pickup2Id,
         'delivery' => null,
         'items' => [
-            ['item_name' => 'Mixed Laundry (kg)', 'service_type' => 'wash_fold', 'price_mode' => 'per_kg', 'qty' => 1, 'weight_kg' => 6.5, 'rate' => 60],
+            ['item_name' => 'Mixed Laundry (kg)', 'service_type' => 'wash_fold', 'price_mode' => 'per_kg', 'qty' => 1, 'weight_kg' => 6.5, 'weight_verified' => 1, 'rate' => 60],
         ],
         'address' => '18 Shivaji Nagar, Near Post Office, Pune - 411005',
     ],
@@ -129,7 +149,7 @@ $demoOrders = [
         'pickup' => $pickupId,
         'delivery' => $delivery2Id,
         'items' => [
-            ['item_name' => 'Curtain', 'service_type' => 'wash_fold', 'price_mode' => 'per_kg', 'qty' => 1, 'weight_kg' => 4, 'rate' => 90],
+            ['item_name' => 'Curtain', 'service_type' => 'wash_fold', 'price_mode' => 'per_kg', 'qty' => 1, 'weight_kg' => 4, 'weight_verified' => 1, 'rate' => 90],
         ],
         'address' => 'Flat 402, Sunrise Apartments, FC Road, Pune - 411001',
     ],
@@ -160,7 +180,10 @@ foreach ($demoOrders as $demo) {
         db_exec('UPDATE orders SET pickup_completed_at = ?, pickup_assigned_at = ? WHERE id = ?', [now(), now(), $orderId]);
     }
     if ($demo['status'] === 'delivered') {
-        db_exec('UPDATE orders SET delivery_completed_at = ? WHERE id = ?', [now(), $orderId]);
+        db_exec(
+            'UPDATE orders SET delivery_completed_at = ?, delivery_assigned_at = ? WHERE id = ?',
+            [now(), now(), $orderId]
+        );
         $total = (float) db_value('SELECT total_amount FROM orders WHERE id = ?', [$orderId], 0);
         record_payment($orderId, $total, 'upi', 'UPI' . random_int(100000, 999999), null, $delivery2Id);
     }

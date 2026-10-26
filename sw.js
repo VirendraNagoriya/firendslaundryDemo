@@ -1,5 +1,5 @@
 /* Laundry Friends service worker - offline shell + cached static assets */
-var CACHE_NAME = 'lf-shell-v2';
+var CACHE_NAME = 'lf-shell-v4';
 var STATIC_ASSETS = [
     './',
     './index.php',

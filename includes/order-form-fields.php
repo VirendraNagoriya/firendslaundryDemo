@@ -1,8 +1,6 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/location-picker.php';
-
 function render_order_fields(array $order, array $items, array $catalog, array $pickupStaff, array $deliveryStaff, bool $withPricing = true, bool $itemsLocked = false): void
 {
     ?>
@@ -55,22 +53,10 @@ function render_order_fields(array $order, array $items, array $catalog, array $
         <label for="delivery_address" class="required">Delivery address</label>
         <textarea id="delivery_address" name="delivery_address" required><?= e((string) ($order['delivery_address'] ?? '')) ?></textarea>
     </div>
-    <?php render_location_picker([
-        'id' => 'order-edit-location',
-        'address_id' => 'delivery_address',
-        'lat_name' => 'pickup_latitude',
-        'lng_name' => 'pickup_longitude',
-        'place_name' => 'pickup_place_id',
-        'lat' => (string) ($order['pickup_latitude'] ?? ''),
-        'lng' => (string) ($order['pickup_longitude'] ?? ''),
-        'place' => (string) ($order['pickup_place_id'] ?? ''),
-        'label' => 'Customer location',
-        'height' => 240,
-    ]); ?>
 
     <h3>Items</h3>
     <?php if ($itemsLocked): ?>
-        <div class="alert alert-warning">This order is closed because it is fully paid. Items are locked; mark the order unpaid to add or change items.</div>
+        <div class="alert alert-warning">This order is delivered or cancelled, so its items are locked and the bill is final.</div>
         <?php if ($items === []): ?>
             <div class="empty-state">No items on this order.</div>
         <?php else: ?>
@@ -83,7 +69,7 @@ function render_order_fields(array $order, array $items, array $catalog, array $
                     <?php foreach ($items as $item): ?>
                         <tr>
                             <td><?= e((string) $item['item_name']) ?></td>
-                            <td><?= e(service_type_label((string) $item['service_type'])) ?></td>
+                            <td><?= e(order_item_service_label($item)) ?></td>
                             <td><?= $item['price_mode'] === 'per_kg' ? 'Per kg' : 'Per piece' ?></td>
                             <td class="num"><?= e((string) $item['qty']) ?></td>
                             <td class="num"><?= e(number_format((float) $item['weight_kg'], 3)) ?> kg</td>

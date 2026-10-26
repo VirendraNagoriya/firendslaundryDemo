@@ -4,7 +4,6 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
-require_once dirname(__DIR__) . '/includes/location-picker.php';
 
 $user = require_login();
 $errors = [];
@@ -33,11 +32,6 @@ $form = [
     'city' => (string) ($customer['city'] ?? ''),
     'pincode' => (string) ($customer['pincode'] ?? ''),
 ];
-$location = [
-    'latitude' => isset($customer['latitude']) && $customer['latitude'] !== null ? (float) $customer['latitude'] : null,
-    'longitude' => isset($customer['longitude']) && $customer['longitude'] !== null ? (float) $customer['longitude'] : null,
-    'place_id' => (string) ($customer['place_id'] ?? ''),
-];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
@@ -48,7 +42,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     foreach (array_keys($form) as $key) {
         $form[$key] = post($key);
     }
-    $location = location_from_post();
 
     if ($form['name'] === '') {
         $errors[] = 'Please enter your name.';
@@ -75,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($errors === []) {
         try {
-            db_transaction(static function () use ($form, $location, $newPhoneKey, $user, $customer): void {
+            db_transaction(static function () use ($form, $newPhoneKey, $user, $customer): void {
                 db_exec(
                     'UPDATE users SET name = ?, email = ?, phone = ?, phone_key = ? WHERE id = ?',
                     [
@@ -89,10 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($customer !== null) {
                     db_exec(
                         'UPDATE customers
-                         SET name = ?, email = ?, phone = ?, phone_key = ?, address = ?, landmark = ?, city = ?, pincode = ?,
-                             latitude = COALESCE(?, latitude),
-                             longitude = COALESCE(?, longitude),
-                             place_id = COALESCE(NULLIF(?, \'\'), place_id)
+                         SET name = ?, email = ?, phone = ?, phone_key = ?, address = ?, landmark = ?, city = ?, pincode = ?
                          WHERE id = ?',
                         [
                             $form['name'],
@@ -103,9 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $form['landmark'],
                             $form['city'],
                             $form['pincode'],
-                            $location['latitude'],
-                            $location['longitude'],
-                            $location['place_id'],
                             (int) $customer['id'],
                         ]
                     );
@@ -187,18 +174,6 @@ layout_start('My Profile', $user['role'] === 'customer' ? 'customer' : 'app');
                         <input type="text" id="pincode" name="pincode" value="<?= e($form['pincode']) ?>">
                     </div>
                 </div>
-                <?php render_location_picker([
-                    'id' => 'profile-location',
-                    'address_id' => 'address',
-                    'city_id' => 'city',
-                    'pincode_id' => 'pincode',
-                    'landmark_id' => 'landmark',
-                    'lat' => $location['latitude'],
-                    'lng' => $location['longitude'],
-                    'place' => (string) ($location['place_id'] ?? ''),
-                    'label' => 'My saved location',
-                    'height' => 240,
-                ]); ?>
             <?php endif; ?>
 
             <div class="form-actions">

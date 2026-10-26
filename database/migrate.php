@@ -59,6 +59,151 @@ foreach (array_filter(array_map('trim', explode(';', $schema))) as $statement) {
 }
 echo "Schema imported.\n";
 
+/* ------------------------------------------------------------------
+ * Owner-managed services, item mapping and weight verification
+ * ------------------------------------------------------------------ */
+
+if (!table_column($pdo, 'laundry_items', 'service_id')) {
+    $pdo->exec('ALTER TABLE laundry_items ADD COLUMN service_id INT UNSIGNED NULL AFTER id');
+    echo "laundry_items.service_id added.\n";
+}
+if (!table_column($pdo, 'orders', 'delivery_assigned_at')) {
+    $pdo->exec('ALTER TABLE orders ADD COLUMN delivery_assigned_at DATETIME NULL AFTER pickup_assigned_at');
+    echo "orders.delivery_assigned_at added.\n";
+}
+foreach ([
+    ['service_id', 'INT UNSIGNED NULL AFTER order_id'],
+    ['service_name', 'VARCHAR(120) NULL AFTER item_name'],
+    ['weight_verified', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER weight_kg'],
+    ['weight_verified_by', 'INT UNSIGNED NULL AFTER weight_verified'],
+    ['weight_verified_at', 'DATETIME NULL AFTER weight_verified_by'],
+] as [$column, $definition]) {
+    if (!table_column($pdo, 'order_items', $column)) {
+        $pdo->exec('ALTER TABLE order_items ADD COLUMN `' . $column . '` ' . $definition);
+        echo "order_items.{$column} added.\n";
+    }
+}
+
+// Build one service per legacy service_type + billing mode combination. A type
+// that was used both per piece and per kg gets two clearly named services.
+$legacyGroups = $pdo->query(
+    "SELECT service_type, price_mode, COUNT(*) AS total,
+            MIN(NULLIF(CASE WHEN price_mode = 'per_kg' THEN rate_per_kg ELSE rate_per_piece END, 0)) AS sample_rate
+     FROM laundry_items
+     WHERE service_id IS NULL
+     GROUP BY service_type, price_mode
+     ORDER BY service_type, price_mode"
+)->fetchAll(PDO::FETCH_ASSOC);
+
+$modeCounts = [];
+foreach ($legacyGroups as $group) {
+    $type = (string) $group['service_type'];
+    $modeCounts[$type] = ($modeCounts[$type] ?? 0) + 1;
+}
+
+$serviceIds = [];
+foreach ($legacyGroups as $group) {
+    $type = (string) $group['service_type'];
+    $mode = (string) $group['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
+    $label = service_type_label($type);
+    // Keep the plain label for the per-piece variant so it matches the demo
+    // seed data; only the per-kg sibling gets a suffix.
+    if (($modeCounts[$type] ?? 1) > 1 && $mode === 'per_kg') {
+        $label .= ' (kg)';
+    }
+    $rate = (float) ($group['sample_rate'] ?? 0);
+
+    $existing = $pdo->prepare('SELECT id FROM services WHERE service_name = ? LIMIT 1');
+    $existing->execute([$label]);
+    $serviceId = $existing->fetchColumn();
+    if ($serviceId === false) {
+        $insert = $pdo->prepare(
+            'INSERT INTO services (service_name, price_mode, rate, is_active) VALUES (?, ?, ?, 1)'
+        );
+        $insert->execute([$label, $mode, $rate]);
+        $serviceId = (int) $pdo->lastInsertId();
+    } else {
+        $serviceId = (int) $serviceId;
+    }
+    $serviceIds[$type . '|' . $mode] = $serviceId;
+
+    $link = $pdo->prepare(
+        'UPDATE laundry_items SET service_id = ? WHERE service_id IS NULL AND service_type = ? AND price_mode = ?'
+    );
+    $link->execute([$serviceId, $type, $mode]);
+}
+if ($serviceIds !== []) {
+    echo 'Mapped legacy catalog into ' . count(array_unique($serviceIds)) . " service(s).\n";
+}
+
+// Normalise an older naming choice: "Wash & Fold (piece)" and "Wash & Fold"
+// describe the same service, so merge them when both exist.
+foreach ($pdo->query("SELECT id, service_name FROM services WHERE service_name LIKE '% (piece)'")->fetchAll(PDO::FETCH_ASSOC) as $pieceService) {
+    $plainName = substr((string) $pieceService['service_name'], 0, -strlen(' (piece)'));
+    $plainStmt = $pdo->prepare('SELECT id FROM services WHERE service_name = ? LIMIT 1');
+    $plainStmt->execute([$plainName]);
+    $plainId = $plainStmt->fetchColumn();
+    if ($plainId === false) {
+        continue;
+    }
+    $pieceId = (int) $pieceService['id'];
+    $plainId = (int) $plainId;
+    $pdo->prepare(
+        'DELETE i FROM laundry_items i
+         JOIN laundry_items keep ON keep.service_id = ? AND keep.item_name = i.item_name
+         WHERE i.service_id = ?'
+    )->execute([$plainId, $pieceId]);
+    $pdo->prepare('UPDATE laundry_items SET service_id = ? WHERE service_id = ?')->execute([$plainId, $pieceId]);
+    $pdo->prepare('UPDATE order_items SET service_id = ?, service_name = ? WHERE service_id = ?')->execute([$plainId, $plainName, $pieceId]);
+    $pdo->prepare('DELETE FROM services WHERE id = ?')->execute([$pieceId]);
+    echo "Merged {$pieceService['service_name']} into {$plainName}.\n";
+}
+
+// Snapshot the service on existing order lines so old invoices stay readable.
+$legacyItemGroups = $pdo->query(
+    "SELECT service_type, price_mode FROM order_items WHERE service_id IS NULL GROUP BY service_type, price_mode"
+)->fetchAll(PDO::FETCH_ASSOC);
+foreach ($legacyItemGroups as $group) {
+    $type = (string) $group['service_type'];
+    $mode = (string) $group['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
+    $serviceId = $serviceIds[$type . '|' . $mode] ?? null;
+    $serviceName = null;
+    if ($serviceId !== null) {
+        $nameStmt = $pdo->prepare('SELECT service_name FROM services WHERE id = ?');
+        $nameStmt->execute([$serviceId]);
+        $serviceName = $nameStmt->fetchColumn() ?: null;
+    }
+    $update = $pdo->prepare(
+        'UPDATE order_items SET service_id = ?, service_name = ? WHERE service_id IS NULL AND service_type = ? AND price_mode = ?'
+    );
+    $update->execute([$serviceId, $serviceName, $type, $mode]);
+}
+
+// Older per-kg lines with a recorded weight were already weighed by staff.
+$pdo->exec(
+    "UPDATE order_items
+     SET weight_verified = 1, weight_verified_at = COALESCE(weight_verified_at, NOW())
+     WHERE price_mode = 'per_kg' AND weight_kg > 0 AND weight_verified = 0"
+);
+
+// Item names are only unique inside a service now.
+if (table_index($pdo, 'laundry_items', 'uq_laundry_item')) {
+    $pdo->exec('ALTER TABLE laundry_items DROP INDEX uq_laundry_item');
+    echo "laundry_items.uq_laundry_item dropped.\n";
+}
+if (!table_index($pdo, 'laundry_items', 'uq_laundry_item_service')) {
+    $pdo->exec('ALTER TABLE laundry_items ADD UNIQUE KEY uq_laundry_item_service (service_id, item_name)');
+    echo "laundry_items.uq_laundry_item_service added.\n";
+}
+if (!table_index($pdo, 'laundry_items', 'idx_laundry_items_service')) {
+    $pdo->exec('ALTER TABLE laundry_items ADD KEY idx_laundry_items_service (service_id)');
+    echo "laundry_items.idx_laundry_items_service added.\n";
+}
+if (!table_index($pdo, 'order_items', 'idx_order_items_service')) {
+    $pdo->exec('ALTER TABLE order_items ADD KEY idx_order_items_service (service_id)');
+    echo "order_items.idx_order_items_service added.\n";
+}
+
 // Unified staff role: widen the enum on older installs before touching the legacy rows.
 $roleColumn = $pdo->query("SHOW COLUMNS FROM users LIKE 'role'")->fetch(PDO::FETCH_ASSOC);
 $roleType = is_array($roleColumn) ? (string) $roleColumn['Type'] : '';

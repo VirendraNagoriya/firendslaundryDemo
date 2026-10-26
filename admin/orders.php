@@ -42,6 +42,15 @@ if ($to !== '') {
     $params[] = $to;
 }
 
+$view = query('view');
+if ($view === 'delivered') {
+    $where[] = "o.status = 'delivered'";
+} elseif ($view === 'pending') {
+    $where[] = "o.status = 'delivered' AND o.payment_status <> 'paid'";
+} else {
+    $view = '';
+}
+
 $whereSql = implode(' AND ', $where);
 $total = (int) db_value("SELECT COUNT(*) FROM orders o WHERE {$whereSql}", $params, 0);
 $pages = max(1, (int) ceil($total / $perPage));
@@ -109,6 +118,12 @@ layout_start('Orders', 'app');
     </form>
     <a class="btn" href="<?= e(url('admin/order-create.php')) ?>">+ New Order</a>
 </div>
+
+<nav class="tab-nav" aria-label="Order views">
+    <a class="tab-link<?= $view === '' ? ' active' : '' ?>" href="<?= e(url('admin/orders.php')) ?>">All orders</a>
+    <a class="tab-link<?= $view === 'delivered' ? ' active' : '' ?>" href="<?= e(url('admin/orders.php?view=delivered')) ?>">Delivered</a>
+    <a class="tab-link<?= $view === 'pending' ? ' active' : '' ?>" href="<?= e(url('admin/orders.php?view=pending')) ?>">Payment Pending</a>
+</nav>
 
 <div class="panel">
     <div class="panel-head">
