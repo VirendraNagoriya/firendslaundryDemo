@@ -42,6 +42,11 @@ No Composer / npm dependencies.
    power the **Navigate** links.
    **Back up the database before upgrading a live site.**
 
+   If you cannot run `migrate.php` on the live server, `database/upgrade_services.sql` performs the
+   same non-destructive schema upgrade in phpMyAdmin. It is safe to run more than once. A generic
+   "We could not save your details" message after an upgrade usually means
+   `orders.delivery_assigned_at` (or the new `order_items` columns) has not been added yet.
+
 5. Open `http://localhost/LaundryFriendsDemo/` in the browser.
 
 ### Error handling and logs

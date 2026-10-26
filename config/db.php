@@ -89,6 +89,18 @@ function db_user_message(Throwable $e): string
  */
 function app_form_message(Throwable $e): string
 {
+    // Caught database/unexpected errors are otherwise silent in production.
+    // Write the full detail to storage/logs/app.log so a failed order can be
+    // diagnosed. Expected validation RuntimeExceptions are not logged.
+    if ($e instanceof PDOException || !($e instanceof RuntimeException)) {
+        app_log_throwable($e);
+    }
+
+    if (defined('APP_DEBUG') && APP_DEBUG) {
+        return get_class($e) . ': ' . $e->getMessage()
+            . ' [' . $e->getFile() . ':' . $e->getLine() . ']';
+    }
+
     if ($e instanceof PDOException) {
         return db_user_message($e);
     }

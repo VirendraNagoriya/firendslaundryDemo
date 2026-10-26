@@ -1,31 +1,67 @@
 <?php
 declare(strict_types=1);
 
-define('APP_NAME', 'Laundry Friends');
-define('APP_TAGLINE', 'Wash. Dry. Fold. Delivered.');
-define('APP_CURRENCY', '₹');
-define('APP_TIMEZONE', 'Asia/Kolkata');
-define('APP_CONTACT_PHONE', '+91 98765 43210');
-define('APP_CONTACT_EMAIL', 'support@laundryfriends.test');
-define('APP_ASSET_VERSION', '2026-10-26c');
-
-date_default_timezone_set(APP_TIMEZONE);
-
-define('DB_HOST', '127.0.0.1');
-define('DB_PORT', '3306');
-define('DB_NAME', 'laundry_friends_demo');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-
-define('SESSION_NAME', 'LAUNDRYFRDS');
-define('CSRF_SESSION_KEY', 'csrf_token');
-define('BACKUP_DIR', dirname(__DIR__) . DIRECTORY_SEPARATOR . 'database' . DIRECTORY_SEPARATOR . 'backups');
-define('BACKUP_RETENTION_DAYS', 7);
-define('BACKUP_FILENAME_PREFIX', 'laundry_backup_');
-
+// Optional local overrides (git-ignored). Loaded first so a live server can keep
+// its database credentials, URL and debug flags outside version control.
 $localOverride = __DIR__ . DIRECTORY_SEPARATOR . 'local.php';
 if (is_file($localOverride)) {
     require $localOverride;
+}
+
+if (!defined('APP_NAME')) {
+    define('APP_NAME', 'Laundry Friends');
+}
+if (!defined('APP_TAGLINE')) {
+    define('APP_TAGLINE', 'Wash. Dry. Fold. Delivered.');
+}
+if (!defined('APP_CURRENCY')) {
+    define('APP_CURRENCY', '₹');
+}
+if (!defined('APP_TIMEZONE')) {
+    define('APP_TIMEZONE', 'Asia/Kolkata');
+}
+if (!defined('APP_CONTACT_PHONE')) {
+    define('APP_CONTACT_PHONE', '+91 98765 43210');
+}
+if (!defined('APP_CONTACT_EMAIL')) {
+    define('APP_CONTACT_EMAIL', 'support@laundryfriends.test');
+}
+if (!defined('APP_ASSET_VERSION')) {
+    define('APP_ASSET_VERSION', '2026-10-26c');
+}
+
+date_default_timezone_set(APP_TIMEZONE);
+
+if (!defined('DB_HOST')) {
+    define('DB_HOST', '127.0.0.1');
+}
+if (!defined('DB_PORT')) {
+    define('DB_PORT', '3306');
+}
+if (!defined('DB_NAME')) {
+    define('DB_NAME', 'laundry_friends_demo');
+}
+if (!defined('DB_USER')) {
+    define('DB_USER', 'root');
+}
+if (!defined('DB_PASS')) {
+    define('DB_PASS', '');
+}
+
+if (!defined('SESSION_NAME')) {
+    define('SESSION_NAME', 'LAUNDRYFRDS');
+}
+if (!defined('CSRF_SESSION_KEY')) {
+    define('CSRF_SESSION_KEY', 'csrf_token');
+}
+if (!defined('BACKUP_DIR')) {
+    define('BACKUP_DIR', dirname(__DIR__) . DIRECTORY_SEPARATOR . 'database' . DIRECTORY_SEPARATOR . 'backups');
+}
+if (!defined('BACKUP_RETENTION_DAYS')) {
+    define('BACKUP_RETENTION_DAYS', 7);
+}
+if (!defined('BACKUP_FILENAME_PREFIX')) {
+    define('BACKUP_FILENAME_PREFIX', 'laundry_backup_');
 }
 
 if (!defined('APP_DEBUG')) {
@@ -36,7 +72,20 @@ if (!defined('APP_LOG_FILE')) {
 }
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'errors.php';
-app_register_error_handlers();
+
+if (defined('APP_BYPASS_ERROR_HANDLER') && APP_BYPASS_ERROR_HANDLER
+    && defined('APP_DEBUG') && APP_DEBUG) {
+    // Temporary production diagnostics. Both APP_DEBUG and
+    // APP_BYPASS_ERROR_HANDLER must be set in the git-ignored config/local.php
+    // to show native PHP errors instead of the friendly error page. Remove both
+    // again after debugging so visitors never see a stack trace.
+    error_reporting(E_ALL);
+    @ini_set('display_errors', '1');
+    @ini_set('display_startup_errors', '1');
+    @ini_set('log_errors', '1');
+} else {
+    app_register_error_handlers();
+}
 
 $appRoot = str_replace('\\', '/', dirname(__DIR__));
 $docRoot = isset($_SERVER['DOCUMENT_ROOT']) ? rtrim(str_replace('\\', '/', $_SERVER['DOCUMENT_ROOT']), '/') : '';
@@ -47,7 +96,9 @@ if ($docRoot !== '' && strpos($appRoot, $docRoot) === 0) {
 if ($baseUrl === '' && PHP_SAPI === 'cli') {
     $baseUrl = '/LaundryFriendsDemo';
 }
-define('BASE_URL', $baseUrl);
+if (!defined('BASE_URL')) {
+    define('BASE_URL', $baseUrl);
+}
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'helpers.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'db.php';
