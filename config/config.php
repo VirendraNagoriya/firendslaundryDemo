@@ -32,20 +32,32 @@ if (!defined('APP_ASSET_VERSION')) {
 
 date_default_timezone_set(APP_TIMEZONE);
 
+// Load environment variables from .env if present
+if (is_file(__DIR__ . '/../../.env')) {
+    $envLines = file(__DIR__ . '/../../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($envLines as $line) {
+        if (strpos(trim($line), '#') === 0) continue;
+        [$key, $val] = array_map('trim', explode('=', $line, 2));
+        if ($key && $val) {
+            putenv("$key=$val");
+        }
+    }
+}
+
 if (!defined('DB_HOST')) {
-    define('DB_HOST', '127.0.0.1');
+    define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1');
 }
 if (!defined('DB_PORT')) {
-    define('DB_PORT', '3306');
+    define('DB_PORT', getenv('DB_PORT') ?: '3306');
 }
 if (!defined('DB_NAME')) {
-    define('DB_NAME', 'laundry_friends_demo');
+    define('DB_NAME', getenv('DB_NAME') ?: 'laundry_friends_demo');
 }
 if (!defined('DB_USER')) {
-    define('DB_USER', 'root');
+    define('DB_USER', getenv('DB_USER') ?: 'root');
 }
 if (!defined('DB_PASS')) {
-    define('DB_PASS', '');
+    define('DB_PASS', getenv('DB_PASS') ?: '');
 }
 
 if (!defined('SESSION_NAME')) {
