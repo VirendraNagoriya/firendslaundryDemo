@@ -159,7 +159,34 @@ layout_start('Add Items (POS)', 'app');
         <div class="panel">
             <div class="panel-head"><h3>Verify actual weight</h3></div>
             <div class="panel-body">
-                <p class="subtle">Customer weight is an estimate. Enter the actual kg you measured - the bill updates automatically.</p>
+                <div class="verification-steps">
+                    <div class="step active">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h4>Estimate Weight</h4>
+                            <p>Customer provides an estimated weight for each item. This was used to calculate the initial bill.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h4>Measure Weight</h4>
+                            <p>Physically weigh each item to get the actual weight. Enter the exact weight below.</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h4>Confirm & Update</h4>
+                            <p>The bill will be automatically updated based on the actual weights. Any difference will be reflected in the total.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="verification-note">
+                    <p><strong>Note:</strong> Customer weight is an estimate. Enter the actual kg you measured - the bill updates automatically.</p>
+                </div>
+
                 <form method="post" action="<?= e(url('staff/pos.php')) ?>">
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="verify_weights">
@@ -167,17 +194,40 @@ layout_start('Add Items (POS)', 'app');
                     <div class="table-wrap">
                         <table class="data">
                             <thead>
-                                <tr><th>Item</th><th>Service</th><th class="num">Actual weight (kg)</th><th>Status</th></tr>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Service</th>
+                                    <th class="num">Estimated (kg)</th>
+                                    <th class="num">Actual (kg)</th>
+                                    <th class="num">Difference</th>
+                                    <th>Status</th>
+                                </tr>
                             </thead>
                             <tbody>
-                            <?php foreach ($kgItems as $item): ?>
+                            <?php foreach ($kgItems as $item): 
+                                $estimatedWeight = (float) $item['weight_kg'];
+                                $difference = 0;
+                                $statusClass = '';
+                                $statusText = 'Not Verified';
+
+                                if ((int) $item['weight_verified'] === 1) {
+                                    $actualWeight = (float) $item['weight_kg'];
+                                    $difference = $actualWeight - $estimatedWeight;
+                                    $statusClass = 'badge-success';
+                                    $statusText = 'Verified';
+                                }
+                            ?>
                                 <tr>
                                     <td><?= e((string) $item['item_name']) ?></td>
                                     <td><?= e(order_item_service_label($item)) ?></td>
+                                    <td class="num"><?= e(number_format($estimatedWeight, 3)) ?></td>
                                     <td class="num">
-                                        <input type="number" name="weights[<?= (int) $item['id'] ?>]" min="0" step="0.5" value="<?= e((string) (float) $item['weight_kg']) ?>" inputmode="decimal" style="max-width:110px;">
+                                        <input type="number" name="weights[<?= (int) $item['id'] ?>]" min="0" step="0.5" value="<?= e((string) $estimatedWeight) ?>" inputmode="decimal" style="max-width:110px;">
                                     </td>
-                                    <td><span class="badge <?= (int) $item['weight_verified'] === 1 ? 'badge-success' : 'badge-warn' ?>"><?= (int) $item['weight_verified'] === 1 ? 'Verified' : 'Estimated' ?></span></td>
+                                    <td class="num <?= $difference > 0 ? 'text-success' : ($difference < 0 ? 'text-danger' : '') ?>">
+                                        <?= $difference != 0 ? ($difference > 0 ? '+' : '') . number_format($difference, 3) : '-' ?>
+                                    </td>
+                                    <td><span class="badge <?= $statusClass ?>"><?= $statusText ?></span></td>
                                 </tr>
                             <?php endforeach; ?>
                             </tbody>
@@ -185,6 +235,7 @@ layout_start('Add Items (POS)', 'app');
                     </div>
                     <div class="form-actions mt-1">
                         <button class="btn btn-green" type="submit">Save verified weights</button>
+                        <button type="button" class="btn btn-ghost" id="verify-all">Verify All</button>
                     </div>
                 </form>
             </div>

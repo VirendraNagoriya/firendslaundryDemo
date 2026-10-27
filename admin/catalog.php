@@ -166,6 +166,7 @@ layout_start('Services & Items', 'app');
                 <div class="form-group">
                     <label for="service_name" class="required">Service name</label>
                     <input type="text" id="service_name" name="service_name" value="<?= e((string) ($editService['service_name'] ?? '')) ?>" placeholder="e.g. Wash & Fold, Premium Dry Clean" required>
+                    <p class="subtle">A descriptive name for your service (e.g., "Standard Wash & Fold", "Premium Dry Clean")</p>
                 </div>
                 <div class="form-group">
                     <label for="price_mode" class="required">Billed by</label>
@@ -174,21 +175,27 @@ layout_start('Services & Items', 'app');
                             <option value="<?= e($key) ?>"<?= ($editService['price_mode'] ?? 'per_piece') === $key ? ' selected' : '' ?>><?= e($label) ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <p class="subtle">Choose how this service will be billed - per piece or per kilogram</p>
                 </div>
                 <div class="form-group">
                     <label for="rate" class="required">Rate (<?= e(APP_CURRENCY) ?>)</label>
                     <input type="number" id="rate" name="rate" min="0.01" step="0.01" value="<?= e((string) ($editService['rate'] ?? '0')) ?>" required>
+                    <p class="subtle">Base rate for this service. For per-kg services, this is the rate per kilogram.</p>
                 </div>
+                <?php if (($editService['price_mode'] ?? 'per_piece') === 'per_kg'): ?>
                 <div class="form-group">
                     <label for="min_weight_kg">Minimum weight (kg)</label>
                     <input type="number" id="min_weight_kg" name="min_weight_kg" min="0" step="0.5" value="<?= e((string) ($editService['min_weight_kg'] ?? '0')) ?>">
+                    <p class="subtle">Minimum weight required for this service. Orders below this weight will be charged for the minimum.</p>
                 </div>
+                <?php endif; ?>
                 <div class="form-group">
                     <label for="service_active">Status</label>
                     <select name="is_active" id="service_active">
                         <option value="1"<?= (int) ($editService['is_active'] ?? 1) === 1 ? ' selected' : '' ?>>Active</option>
                         <option value="0"<?= $editService !== null && (int) $editService['is_active'] === 0 ? ' selected' : '' ?>>Inactive</option>
                     </select>
+                    <p class="subtle">Inactive services will not appear in customer or staff interfaces</p>
                 </div>
             </div>
             <div class="form-actions">

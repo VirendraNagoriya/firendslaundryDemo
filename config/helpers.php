@@ -144,6 +144,7 @@ function service_types(): array
         'iron_only' => 'Ironing Only',
         'shoe_clean' => 'Shoe Cleaning',
         'bed_cover' => 'Bed Cover / Curtain',
+        'weight_based' => 'Weight Based Laundry',
         'other' => 'Other',
     ];
 }
@@ -175,16 +176,26 @@ function service_mode_label(string $mode): string
 function service_type_for_name(string $name): string
 {
     $normalised = mb_strtolower(trim($name));
+
+    // Check for exact matches first
     foreach (service_types() as $key => $label) {
         if (mb_strtolower($label) === $normalised) {
             return $key;
         }
     }
+
+    // Check for partial matches
     foreach (service_types() as $key => $label) {
         if (mb_strpos($normalised, mb_strtolower($label)) !== false) {
             return $key;
         }
     }
+
+    // Special handling for weight-based services
+    if (mb_strpos($normalised, 'weight') !== false || mb_strpos($normalised, 'kg') !== false) {
+        return 'weight_based';
+    }
+
     return 'other';
 }
 

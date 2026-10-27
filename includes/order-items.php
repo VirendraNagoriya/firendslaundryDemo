@@ -128,7 +128,9 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
                     <input type="number" name="item_weight[]" min="0" step="0.5" value="<?= e((string) $weight) ?>" inputmode="decimal">
                     <button type="button" data-step="0.5" data-target="weight" aria-label="Half kilo more">+</button>
                 </div>
-                <span class="item-field-hint">Weight will be measured / verified by the pickup boy.</span>
+                <?php if ($mode === 'per_kg'): ?>
+                    <span class="item-field-hint">Weight will be measured / verified by the pickup boy. Total cost: <?= e(APP_CURRENCY) ?><span class="weight-cost">0.00</span></span>
+                <?php endif; ?>
             </div>
             <label class="item-field">
                 <span class="item-field-label">Rate (<?= e(APP_CURRENCY) ?>)</span>
@@ -136,8 +138,15 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
             </label>
             <div class="item-field item-field-amount">
                 <span class="item-field-label">Amount</span>
-                <strong data-amount><?= e(number_format(0, 2)) ?></strong>
+                <strong data-amount"><?= e(number_format(0, 2)) ?></strong>
             </div>
+            <?php if (can_add_extra_charges(current_user())): ?>
+                <div class="item-field">
+                    <button type="button" class="btn btn-ghost btn-sm btn-add-extra" data-item-index="<?= $index ?>">
+                        Add Extra Charge
+                    </button>
+                </div>
+            <?php endif; ?>
         </div>
         <input type="hidden" name="item_mode[]" value="<?= e($mode) ?>" data-mode-value>
         <input type="hidden" name="item_service_type[]" value="<?= e(service_type_for_name((string) ($selectedService['service_name'] ?? ''))) ?>" data-service-type>
@@ -223,12 +232,28 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
             </div>
             <div class="sheet-body">
                 <div class="sheet-section">
+                    <div class="sheet-section-header">
+                        <span class="sheet-label">Add Item</span>
+                        <div class="selection-mode-toggle">
+                            <button type="button" class="mode-btn" data-mode="service-first">Service First</button>
+                            <button type="button" class="mode-btn active" data-mode="item-first">Item First</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sheet-section service-first-mode">
                     <span class="sheet-label">Service</span>
                     <div class="chip-group"><?= $serviceChips ?></div>
                 </div>
 
+                <div class="sheet-section item-first-mode">
+                    <span class="sheet-label">Item name</span>
+                    <input type="text" class="sheet-input" data-sheet-name list="<?= e($catalogListId) ?>" placeholder="e.g. Shirt, Saree, Curtains" autocomplete="off">
+                    <p class="subtle">Select an item to see available services</p>
+                </div>
+
                 <?php if ($quickPicks !== []): ?>
-                    <div class="sheet-section">
+                    <div class="sheet-section service-first-mode">
                         <span class="sheet-label">Tap to add</span>
                         <div class="quick-picks" data-quick-picks>
                             <?php foreach ($quickPicks as $pick): ?>
@@ -241,12 +266,6 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                         <p class="subtle quick-picks-empty" data-quick-empty hidden>This service has no catalog items yet. Add them in Admin &rarr; Services &amp; items.</p>
                     </div>
                 <?php endif; ?>
-
-                <div class="sheet-section" data-custom-name>
-                    <span class="sheet-label">Item name</span>
-                    <input type="text" class="sheet-input" data-sheet-name list="<?= e($catalogListId) ?>" placeholder="e.g. Shirt, Saree, Curtains" autocomplete="off">
-                    <p class="subtle" data-kg-note hidden>Kg services only accept catalog items. Pick one above.</p>
-                </div>
 
                 <div class="sheet-grid">
                     <div class="sheet-field" data-sheet-qty>
@@ -276,6 +295,24 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                 <button type="button" class="btn btn-ghost" data-sheet-close>Cancel</button>
                 <button type="button" class="btn btn-primary btn-lg" data-sheet-add>Add to order</button>
             </div>
+
+            <?php if (can_add_extra_charges(current_user())): ?>
+                <div class="extra-charge-section" hidden>
+                    <div class="sheet-section">
+                        <span class="sheet-label">Extra Charges</span>
+                        <div class="sheet-grid">
+                            <div class="sheet-field">
+                                <span class="sheet-label">Amount (<?= e(APP_CURRENCY) ?>)</span>
+                                <input type="number" class="sheet-input" data-extra-charge-amount min="0" step="0.5" value="0" inputmode="decimal">
+                            </div>
+                            <div class="sheet-field">
+                                <span class="sheet-label">Notes</span>
+                                <input type="text" class="sheet-input" data-extra-charge-notes placeholder="Reason for extra charge">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
     <?php

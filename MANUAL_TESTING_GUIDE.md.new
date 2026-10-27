@@ -1,0 +1,63 @@
+# Manual Testing Guide for Laundry Friends
+
+## Login Credentials
+| Role | Email / Phone | Password | Description |
+| --- | --- | --- | --- |
+| Super Admin | superadmin@laundryfriends.test / 9000000001 | superadmin@123 | Highest level access |
+| Owner (Admin) | owner@laundryfriends.test / 9000000002 | owner@123 | Full access (orders, customers, staff, payments, reports) |
+| Pickup Staff | ramesh@laundryfriends.test / 9000000003 OR vikas@laundryfriends.test / 9000000005 | pickup@123 | Pickup tasks, add items on pickup, collect payment |
+| Delivery Staff | suresh@laundryfriends.test / 9000000004 OR anita@laundryfriends.test / 9000000006 | delivery@123 | Delivery tasks, collect/change payment with note |
+| Customer | anita.sharma@example.com / 9812345670 | customer123 | Customer dashboard |
+
+## Task 1: Service Rate Management
+- **Requirement**: Rate of services should be fixed by owner/admin only. Pickup boy can add extra charges with notes and amount for both kg-wise and piece-wise.
+- **Implementation**: 
+  - Service rates should be editable only by admin/owner
+  - Pickup boy should have an option to add extra charges with notes
+  - For kg-wise services, when selecting "mix laundry kg wise", all items should be added separately
+  - For kg-wise services, pickup boy should be able to verify the weight
+
+## Task 2: Due Amount Modification
+- **Requirement**: Due amount cannot be modified by pickup and delivery boy
+- **Implementation**: 
+  - Only admin/owner should be able to modify due amounts
+  - Pickup and delivery boys should only view due amounts
+
+## Task 3: Service Rate Modification
+- **Requirement**: Rate of services cannot be changed by customer, pickup boy, or delivery boy. Should be fixed as menu.
+- **Implementation**: 
+  - Service rates should be read-only for all except admin/owner
+  - Create a fixed service menu that all users can view but not modify
+
+## Task 4: Order Addition Confirmation
+- **Requirement**: When clicked on "add to order", show a popup message with service name
+- **Implementation**: 
+  - Add a confirmation popup when items are added to an order
+  - Display the service name in the confirmation message
+
+## Task 5: Verification UI/UX
+- **Requirement**: Good UI message for twice verification
+- **Implementation**: 
+  - Create a clear UI for verification process
+  - Add clear messages for each verification step
+
+## Task 6: Item Addition UI/UX
+- **Requirement**: UI/UX and logic for adding items should be improved. Provide article name to select then service or vice versa for customer, admin, pickup boy.
+- **Implementation**: 
+  - Improve the item addition flow
+  - Allow selection of article name first, then service
+  - Or allow selection of service first, then article name
+  - Make the flow intuitive for all user types
+
+## Task 7: Order Modification by Pickup Boy
+- **Requirement**: If customer created order but pickup boy has to change whole order for the customer, allow it. Customer may not understand the ordering process via service.
+- **Implementation**: 
+  - Allow pickup boys to modify entire orders created by customers
+  - Provide clear indication when an order is being modified
+
+## Task 8: Service and Article Management Flow
+- **Requirement**: Make services and article management flow better for user and all user experience
+- **Implementation**: 
+  - Improve the workflow for managing services and articles
+  - Make it intuitive for all user types
+  - Streamline the management process

@@ -24,7 +24,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $amount = (float) post('amount');
             $method = post('method');
-            if ($amount <= 0) {
+
+            // Check if the amount matches the due amount
+            $due = max(0.0, (float) $order['total_amount'] - (float) $order['paid_amount']);
+            if (abs($amount - $due) > 0.01) {
+                $errors[] = 'You can only collect the full due amount of ' . money($due) . '. Partial payments are not allowed.';
+            } elseif ($amount <= 0) {
                 $errors[] = 'Please enter a valid collection amount.';
             } elseif (!isset(payment_methods()[$method])) {
                 $errors[] = 'Please select a valid payment method.';

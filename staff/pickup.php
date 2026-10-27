@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = post('action');
     $orderId = (int) post('order_id');
     $order = db_row('SELECT * FROM orders WHERE id = ?', [$orderId]);
-    $knownActions = ['add_items', 'collect_payment', 'picked_up', 'ready'];
+    $knownActions = ['add_items', 'modify_order', 'collect_payment', 'picked_up', 'ready'];
 
     if ($order === null) {
         $errors[] = 'Order not found.';
@@ -46,6 +46,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     audit('order.items_added', 'order', (string) $orderId, $added . ' item(s) added at pickup location');
                     flash('success', $added . ' item(s) added to order ' . $order['order_number'] . '.');
+                    redirect('staff/pickup.php');
+                }
+            }
+        } elseif ($action === 'modify_order') {
+            // Clear all existing items
+            db_exec('DELETE FROM order_items WHERE order_id = ?', [$orderId]);
+
+            // Add new items
+            $items = collect_items_from_post(true);
+            if ($items === []) {
+                $errors[] = 'Please add at least one item.';
+            } else {
+                $added = append_order_items($orderId, $items);
+                if ($added === 0) {
+                    $errors[] = 'No items were added. The order may have been closed.';
+                } else {
+                    audit('order.items_modified', 'order', (string) $orderId, 'Order items modified at pickup location');
+                    flash('success', 'Order ' . $order['order_number'] . ' has been modified.');
                     redirect('staff/pickup.php');
                 }
             }
@@ -260,6 +278,24 @@ layout_start('Pickup Queue', 'app');
                         . '</div>'
                         . '</form>'
                         . '</details></div>';
+
+                    // Add modify order button
+                    $actions .= '<div class="tile-modify">'
+                        . '<form method="post" data-calc-items>'
+                        . csrf_field()
+                        . '<input type="hidden" name="action" value="modify_order">'
+                        . '<input type="hidden" name="order_id" value="' . e((string) $order['id']) . '">'
+                        . '<div class="modify-warning">'
+                        . '<strong>Warning:</strong> This will replace all items in the order. Use only if the customer has made significant changes.'
+                        . '</div>'
+                        . $pickerHtml
+                        . '<div class="form-actions mt-1">'
+                        . '<button class="btn btn-sm btn-warning" type="submit" data-confirm="Are you sure you want to replace all items in this order?" data-confirm-2="This will completely replace the order contents. Confirm only if necessary.">'
+                        . 'Modify Entire Order'
+                        . '</button>'
+                        . '</div>'
+                        . '</form>'
+                        . '</div>';
                 }
 
                 echo order_tile($order, [

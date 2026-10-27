@@ -22,6 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $amount = (float) post('amount');
             $method = post('method');
+
+            // Allow admin to modify due amounts
             if ($amount <= 0) {
                 $errors[] = 'Please enter a valid collection amount.';
             } elseif (!isset(payment_methods()[$method])) {
