@@ -5,6 +5,7 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
 require_once dirname(__DIR__) . '/includes/order-items.php';
+require_once dirname(__DIR__) . '/includes/phone-helper.php';
 
 $user = require_admin();
 
@@ -39,8 +40,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($order['contact_name'] === '') {
         $errors[] = 'Please enter the customer name.';
     }
-    if (!valid_phone($order['contact_phone'])) {
-        $errors[] = 'Please enter a valid 10-digit mobile number.';
+    $normalizedPhone = normalize_mobile_10($order['contact_phone']);
+    if ($normalizedPhone === false) {
+        $errors[] = 'Cannot create order as Owner/Staff: Enter a valid 10-digit Indian mobile number starting with 6-9 for the new customer. Order was not created.';
+    } else {
+        $order['contact_phone'] = $normalizedPhone;
     }
     if (trim($order['delivery_address']) === '') {
         $errors[] = 'Please enter the delivery address.';
@@ -121,7 +125,8 @@ layout_start('New Order', 'app');
                 </div>
                 <div class="form-group">
                     <label for="contact_phone" class="required">Mobile number</label>
-                    <input type="tel" inputmode="tel" maxlength="16" id="contact_phone" name="contact_phone" value="<?= e((string) $order['contact_phone']) ?>" data-lookup-field="phone" required title="10-digit mobile number">
+                    <input type="tel" inputmode="numeric" maxlength="10" pattern="[6-9][0-9]{9}" id="contact_phone" name="contact_phone" value="<?= e((string) $order['contact_phone']) ?>" data-lookup-field="phone" required placeholder="Enter 10 digit mobile number">
+                    <small class="subtle">Only 10 digits allowed. Must start with 6, 7, 8 or 9</small>
                 </div>
             </div>
 

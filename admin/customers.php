@@ -19,11 +19,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $address = post('address');
         $password = raw_post('password');
 
+        require_once dirname(__DIR__) . '/includes/phone-helper.php';
+        $phoneNormalized = normalize_mobile_10($phone);
+        if ($phoneNormalized === false) {
+            $errors[] = 'Mobile number must be exactly 10 digits and start with 6-9. Customer not added.';
+        } else {
+            $phone = $phoneNormalized;
+        }
+
         if ($name === '') {
             $errors[] = 'Please enter the customer name.';
-        }
-        if (!valid_phone($phone)) {
-            $errors[] = 'Please enter a valid 10-digit mobile number.';
         }
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors[] = 'Please enter a valid email address.';
@@ -129,7 +134,8 @@ layout_start('Customers', 'app');
                     </div>
                     <div class="form-group">
                         <label for="phone" class="required">Mobile number</label>
-                        <input type="tel" inputmode="tel" maxlength="16" id="phone" name="phone" required title="10-digit mobile number">
+                        <input type="tel" inputmode="numeric" maxlength="10" pattern="[6-9][0-9]{9}" id="phone" name="phone" required placeholder="Enter 10 digit mobile number">
+                        <small class="subtle">Only 10 digits allowed. Must start with 6, 7, 8 or 9</small>
                     </div>
                     <div class="form-group">
                         <label for="email">Email</label>

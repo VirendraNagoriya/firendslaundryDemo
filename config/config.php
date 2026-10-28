@@ -55,7 +55,7 @@ if (!defined('DB_HOST')) {
     define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1');
 }
 if (!defined('DB_PORT')) {
-    define('DB_PORT', getenv('DB_PORT') ?: '3306');
+    define('DB_PORT', getenv('DB_PORT') ?: '3307');
 }
 if (!defined('DB_NAME')) {
     define('DB_NAME', getenv('DB_NAME') ?: 'laundry_friends_demo');

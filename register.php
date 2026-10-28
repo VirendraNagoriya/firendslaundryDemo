@@ -32,8 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($form['name'] === '') {
         $errors[] = 'Please enter your name.';
     }
-    if (!valid_phone($form['phone'])) {
-        $errors[] = 'Please enter a valid 10-digit mobile number.';
+    require_once __DIR__ . '/includes/phone-helper.php';
+    $phoneNormalized = normalize_mobile_10($form['phone']);
+    if ($phoneNormalized === false) {
+        $errors[] = 'Please enter a valid 10-digit Indian mobile number starting with 6-9.';
+    } else {
+        $form['phone'] = $phoneNormalized;
     }
     if ($form['email'] !== '' && !filter_var($form['email'], FILTER_VALIDATE_EMAIL)) {
         $errors[] = 'Please enter a valid email address.';
@@ -105,7 +109,8 @@ layout_start('Customer Registration', 'public');
                 </div>
                 <div class="form-group">
                     <label for="phone" class="required">Mobile number</label>
-                    <input type="tel" inputmode="tel" maxlength="16" id="phone" name="phone" value="<?= e($form['phone']) ?>" required title="10-digit mobile number">
+                    <input type="tel" inputmode="numeric" maxlength="10" pattern="[6-9][0-9]{9}" id="phone" name="phone" value="<?= e($form['phone']) ?>" required placeholder="Enter 10 digit mobile number">
+                    <small class="subtle">Only 10 digits allowed. Must start with 6, 7, 8 or 9</small>
                 </div>
                 <div class="form-group">
                     <label for="email">Email</label>

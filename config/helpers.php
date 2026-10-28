@@ -285,6 +285,7 @@ function phone_digits(string $phone): string
 /**
  * Normalised mobile number used as the primary identity key.
  * "98765 43210", "+91 98765 43210" and "09876543210" all become "9876543210".
+ * Only accepts 10-digit Indian mobile numbers starting with 6-9.
  */
 function phone_key(string $phone): string
 {
@@ -292,13 +293,19 @@ function phone_key(string $phone): string
     if ($digits === '') {
         return '';
     }
-    if (strlen($digits) > 10 && strpos($digits, '91') === 0) {
+    if (strlen($digits) === 11 && $digits[0] === '0') {
+        $digits = substr($digits, 1);
+    }
+    if (strlen($digits) === 12 && substr($digits, 0, 2) === '91') {
         $digits = substr($digits, 2);
     }
     if (strlen($digits) > 10) {
         $digits = substr($digits, -10);
     }
-    return $digits;
+    if (strlen($digits) === 10 && preg_match('/^[6-9]\d{9}$/', $digits)) {
+        return $digits;
+    }
+    return '';
 }
 
 function now(): string
@@ -381,7 +388,11 @@ function status_badge(string $status): string
 
 function valid_phone(string $phone): bool
 {
-    return preg_match('/^\d{10}$/', phone_key($phone)) === 1;
+    $key = phone_key($phone);
+    if ($key === '') {
+        return false;
+    }
+    return preg_match('/^[6-9]\d{9}$/', $key) === 1;
 }
 
 function normalise_phone(string $phone): string

@@ -178,6 +178,7 @@ function layout_end(): void
 <?php layout_bottom_nav(); ?>
 <?php endif; ?>
 <script src="<?= e(asset('assets/js/app.js')) ?>"></script>
+<script src="<?= e(asset('assets/js/phone-validate.js')) ?>"></script>
 <script>
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {

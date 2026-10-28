@@ -575,7 +575,12 @@ function customer_for_user(int $userId): ?array
 
 function find_or_create_customer(array $data, ?int $createdBy = null): int
 {
-    $phone = normalise_phone((string) $data['phone']);
+    require_once __DIR__ . '/phone-helper.php';
+    $normalized = normalize_mobile_10($data['phone'] ?? '');
+    if ($normalized === false) {
+        throw new RuntimeException('Please enter a valid 10-digit Indian mobile number starting with 6-9.');
+    }
+    $phone = normalise_phone($normalized);
     $key = phone_key($phone);
     $existing = null;
     if ($key !== '') {
