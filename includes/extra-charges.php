@@ -78,9 +78,9 @@ function can_modify_service_rates(array $user): bool
  * @param array $user The user array
  * @return bool True if the user can add extra charges, false otherwise
  */
-function can_add_extra_charges(array $user): bool
+function can_add_extra_charges(?array $user): bool
 {
-    return in_array($user['role'], ['staff', 'pickup', 'delivery'], true);
+    return $user !== null && in_array($user['role'], ['staff', 'pickup', 'delivery'], true);
 }
 
 /**

@@ -10,13 +10,13 @@ if (is_logged_in()) {
 
 $errors = [];
 $identity = '';
-$roleHint = 'customer';
+$roleHint = 'any';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
     $identity = post('identity');
     $password = raw_post('password');
-    $roleHint = post('role_hint', 'customer');
+    $roleHint = post('role_hint', 'any');
 
     if ($identity === '' || $password === '') {
         $errors[] = 'Please enter your login id and password.';
@@ -41,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $tabs = [
+    'any' => 'Any account',
     'customer' => 'Customer',
     'staff' => 'Staff',
     'admin' => 'Admin / Owner',

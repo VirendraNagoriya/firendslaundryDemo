@@ -32,21 +32,34 @@ SELECT 'customer', 'Anita Sharma', 'anita.sharma@example.com', '9812345670', '98
 WHERE NOT EXISTS (SELECT 1 FROM `customers` WHERE phone_key = '9812345670');
 
 -- ------------------------------------------------------------
--- 2) Laundry catalog (skipped if the item name already exists)
+-- 2) Laundry catalog (skipped if the service/item already exists)
 -- ------------------------------------------------------------
-INSERT IGNORE INTO `laundry_items` (`item_name`, `service_type`, `price_mode`, `rate_per_piece`, `rate_per_kg`, `is_active`) VALUES
-('Shirt', 'wash_iron', 'per_piece', 15.00, 120.00, 1),
-('Trouser', 'wash_iron', 'per_piece', 20.00, 160.00, 1),
-('T-Shirt', 'wash_fold', 'per_piece', 10.00, 80.00, 1),
-('Jeans', 'wash_iron', 'per_piece', 25.00, 200.00, 1),
-('Dress / Saree', 'dry_clean', 'per_piece', 90.00, 600.00, 1),
-('Suit / Blazer', 'dry_clean', 'per_piece', 120.00, 800.00, 1),
-('Curtain', 'wash_fold', 'per_kg', 0.00, 90.00, 1),
-('Bed Cover', 'wash_fold', 'per_kg', 0.00, 110.00, 1),
-('Mixed Laundry (kg)', 'wash_fold', 'per_kg', 0.00, 60.00, 1),
-('Sneakers', 'shoe_clean', 'per_piece', 200.00, 350.00, 1),
-('Blanket', 'wash_fold', 'per_kg', 0.00, 80.00, 1),
-('Towel Set', 'wash_fold', 'per_piece', 12.00, 60.00, 1);
+INSERT IGNORE INTO `services` (`service_name`, `price_mode`, `rate`, `is_active`) VALUES
+('Wash & Iron', 'per_piece', 15.00, 1),
+('Wash & Fold', 'per_piece', 10.00, 1),
+('Wash & Fold (kg)', 'per_kg', 60.00, 1),
+('Dry Clean', 'per_piece', 90.00, 1),
+('Shoe Cleaning', 'per_piece', 200.00, 1);
+
+-- Every item must belong to a service. Without service_id the item picker and
+-- catalog page cannot load the item, so resolve the service by name here.
+INSERT IGNORE INTO `laundry_items` (`service_id`, `item_name`, `service_type`, `price_mode`, `rate_per_piece`, `rate_per_kg`, `is_active`)
+SELECT s.id, c.item_name, c.service_type, c.price_mode, c.rate_per_piece, c.rate_per_kg, 1
+FROM (
+  SELECT 'Shirt' AS item_name, 'Wash & Iron' AS service_name, 'wash_iron' AS service_type, 'per_piece' AS price_mode, 15.00 AS rate_per_piece, 0 AS rate_per_kg
+  UNION ALL SELECT 'Trouser', 'Wash & Iron', 'wash_iron', 'per_piece', 20.00, 0
+  UNION ALL SELECT 'Jeans', 'Wash & Iron', 'wash_iron', 'per_piece', 25.00, 0
+  UNION ALL SELECT 'T-Shirt', 'Wash & Fold', 'wash_fold', 'per_piece', 10.00, 0
+  UNION ALL SELECT 'Towel Set', 'Wash & Fold', 'wash_fold', 'per_piece', 12.00, 0
+  UNION ALL SELECT 'Curtain', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 90.00
+  UNION ALL SELECT 'Bed Cover', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 110.00
+  UNION ALL SELECT 'Mixed Laundry (kg)', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60.00
+  UNION ALL SELECT 'Blanket', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 80.00
+  UNION ALL SELECT 'Dress / Saree', 'Dry Clean', 'dry_clean', 'per_piece', 90.00, 0
+  UNION ALL SELECT 'Suit / Blazer', 'Dry Clean', 'dry_clean', 'per_piece', 120.00, 0
+  UNION ALL SELECT 'Sneakers', 'Shoe Cleaning', 'shoe_clean', 'per_piece', 200.00, 0
+) AS c
+JOIN `services` s ON s.service_name = c.service_name;
 
 -- ------------------------------------------------------------
 -- 3) Settings (skipped if the setting already exists)

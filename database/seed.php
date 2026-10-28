@@ -13,6 +13,12 @@ function seed_user(string $role, string $name, string $phone, string $email, str
 {
     $existing = db_row('SELECT id FROM users WHERE role = ? AND phone_key = ?', [$role, phone_key($phone)]);
     if ($existing !== null) {
+        // Always reset demo credentials so re-running the seed fixes a forgotten
+        // or outdated password instead of silently keeping the old hash.
+        db_exec(
+            'UPDATE users SET name = ?, email = ?, password_hash = ?, is_active = 1, must_change_password = 0 WHERE id = ?',
+            [$name, $email, password_hash($password, PASSWORD_DEFAULT), (int) $existing['id']]
+        );
         return (int) $existing['id'];
     }
     return db_insert(
@@ -23,8 +29,14 @@ function seed_user(string $role, string $name, string $phone, string $email, str
 
 function seed_customer(string $name, string $phone, string $email, string $address): int
 {
-    $existing = db_row('SELECT id FROM customers WHERE phone_key = ?', [phone_key($phone)]);
+    $existing = db_row('SELECT id, user_id FROM customers WHERE phone_key = ?', [phone_key($phone)]);
     if ($existing !== null) {
+        if ($existing['user_id'] !== null) {
+            db_exec(
+                'UPDATE users SET name = ?, email = ?, password_hash = ?, is_active = 1, must_change_password = 0 WHERE id = ?',
+                [$name, $email, password_hash('customer123', PASSWORD_DEFAULT), (int) $existing['user_id']]
+            );
+        }
         return (int) $existing['id'];
     }
     $userId = db_insert(

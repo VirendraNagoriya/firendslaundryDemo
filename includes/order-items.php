@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/extra-charges.php';
+
 /**
  * Active catalog rows joined with their service. An item always belongs to a
  * service, and the service decides whether it is billed per piece or per kg.
