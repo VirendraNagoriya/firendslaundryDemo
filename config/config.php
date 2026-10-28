@@ -20,6 +20,11 @@ if (!defined('APP_CURRENCY')) {
 if (!defined('APP_TIMEZONE')) {
     define('APP_TIMEZONE', 'Asia/Kolkata');
 }
+if (!defined('DB_TIMEZONE')) {
+    // Fixed IST offset, so this works even when MySQL's timezone tables are
+    // not populated (named zones such as Asia/Kolkata would fail there).
+    define('DB_TIMEZONE', '+05:30');
+}
 if (!defined('APP_CONTACT_PHONE')) {
     define('APP_CONTACT_PHONE', '+91 98765 43210');
 }

@@ -14,6 +14,9 @@ function db(): PDO
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
         ]);
+        // Keep MySQL sessions on the same clock as PHP (Asia/Kolkata), so
+        // CURRENT_TIMESTAMP values written by the database match app times.
+        $pdo->exec("SET time_zone = '" . DB_TIMEZONE . "'");
     } catch (PDOException $e) {
         app_log_throwable($e);
         throw new RuntimeException('Database connection failed. Please try again in a moment.', 0, $e);
