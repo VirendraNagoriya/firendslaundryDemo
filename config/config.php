@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+date_default_timezone_set('Asia/Kolkata');
+
 // Optional local overrides (git-ignored). Loaded first so a live server can keep
 // its database credentials, URL and debug flags outside version control.
 $localOverride = __DIR__ . DIRECTORY_SEPARATOR . 'local.php';
