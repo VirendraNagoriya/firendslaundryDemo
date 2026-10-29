@@ -1200,3 +1200,68 @@ table.data tbody tr:last-child td { border-bottom: 0; }
     padding: .7rem 1rem;
     border-radius: 12px;
 }
+/* Layout switcher */
+.layout-switcher {
+    display: inline-flex;
+    gap: .25rem;
+    margin-left: auto;
+    margin-right: .5rem;
+}
+.layout-switcher button {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink-soft);
+    padding: .3rem .6rem;
+    border-radius: 8px;
+    font-size: .78rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.layout-switcher button.active {
+    background: var(--brand);
+    color: #fff;
+    border-color: var(--brand);
+}
+
+/* Stacked layout: single column, all sections visible */
+.sheet.layout-stacked .sheet-body.pos-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr auto;
+}
+.sheet.layout-stacked .pos-filters {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    max-height: 30vh;
+    overflow-y: auto;
+}
+.sheet.layout-stacked .pos-details {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+}
+
+/* Compact layout: articles list with sticky bottom bar */
+.sheet.layout-compact .sheet-body.pos-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+}
+.sheet.layout-compact .pos-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: .5rem;
+}
+.sheet.layout-compact .quick-picks {
+    grid-template-columns: 1fr;
+}
+.sheet.layout-compact .quick-pick {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+.sheet.layout-compact .pos-details {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    border-top: 1px solid var(--line);
+}

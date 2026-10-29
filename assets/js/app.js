@@ -655,11 +655,30 @@
             syncSheetService(true);
         }
 
-        sheet.querySelectorAll('[data-item-tab]').forEach(function (tab) {
-            tab.addEventListener('click', function () {
-                activateSheetTab(tab.getAttribute('data-item-tab'));
-            });
+        sheet.addEventListener('click', function (event) {
+            var layoutBtn = event.target.closest('[data-layout]');
+            if (layoutBtn) {
+                event.preventDefault();
+                var layout = layoutBtn.getAttribute('data-layout');
+                sheet.classList.remove('layout-pos', 'layout-stacked', 'layout-compact');
+                sheet.classList.add('layout-' + layout);
+                sheet.querySelectorAll('[data-layout]').forEach(function (b) {
+                    b.classList.toggle('active', b === layoutBtn);
+                });
+                try { window.localStorage.setItem('lf-additem-layout', layout); } catch (e) {}
+            }
         });
+
+        // Restore preferred layout
+        try {
+            var saved = window.localStorage.getItem('lf-additem-layout');
+            if (saved) {
+                var btn = sheet.querySelector('[data-layout="' + saved + '"]');
+                if (btn) { btn.click(); }
+            } else {
+                sheet.classList.add('layout-pos');
+            }
+        } catch (e) { sheet.classList.add('layout-pos'); }
 
         sheet.addEventListener('click', function (event) {
             var bottomTab = event.target.closest('[data-item-tab-bottom]');
