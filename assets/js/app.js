@@ -656,7 +656,13 @@
         }
 
         sheet.addEventListener('click', function (event) {
-            var layoutBtn = event.target.closest('[data-layout]');
+            var doneBack = event.target.closest('[data-done-back]');
+            if (doneBack) {
+                event.preventDefault();
+                var backUrl = sheet.getAttribute('data-back-url');
+                if (backUrl) { window.location.href = backUrl; }
+                return;
+            }
             if (layoutBtn) {
                 event.preventDefault();
                 var layout = layoutBtn.getAttribute('data-layout');

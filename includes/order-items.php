@@ -379,7 +379,7 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
         <template data-item-template><?= item_card_html(['item_name' => '', 'qty' => 1, 'weight_kg' => 0, 'rate' => 0], $catalogListId, 0, $services) ?></template>
 
         <div class="sheet-backdrop" data-sheet-backdrop hidden></div>
-        <div class="sheet layout-stacked" data-sheet role="dialog" aria-modal="true" aria-label="Add an item" hidden>
+        <div class="sheet layout-stacked" data-sheet role="dialog" aria-modal="true" aria-label="Add an item"<?= !empty($options['back_url']) ? ' data-back-url="' . e((string) $options['back_url']) . '"' : '' ?> hidden>
             <div class="sheet-grip"></div>
             <div class="sheet-head">
                 <h3>Add an item</h3>
@@ -499,6 +499,7 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
 
             <div class="sheet-foot">
                 <button type="button" class="btn btn-ghost" data-sheet-close>Done &amp; Close</button>
+                <button type="button" class="btn btn-ghost" data-done-back>Done &amp; Back to order</button>
                 <button type="button" class="btn btn-primary btn-lg" data-sheet-add>Save &amp; Add Next</button>
             </div>
 

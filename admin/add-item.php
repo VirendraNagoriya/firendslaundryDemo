@@ -18,7 +18,7 @@ layout_start('Add Item', 'app');
         <a class="btn btn-sm btn-ghost done-back" href="<?= e(url($backUrl)) ?>">Done &amp; Back</a>
     </div>
     <div style="padding:1rem;">
-        <?php render_item_picker([], $catalog, ['draft_key' => 'admin-order', 'intro' => 'Tap an article to add it. Items are saved automatically.']); ?>
+        <?php render_item_picker([], $catalog, ['draft_key' => 'admin-order', 'intro' => 'Tap an article to add it. Items are saved automatically.', 'back_url' => 'order-create.php']); ?>
     </div>
 </div>
 <script>
