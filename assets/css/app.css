@@ -1164,12 +1164,16 @@ table.data tbody tr:last-child td { border-bottom: 0; }
         padding-bottom: .5rem;
         max-height: none;
         display: flex;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         gap: .5rem;
-        align-items: flex-start;
+        align-items: center;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
-    .pos-filters .sheet-section { flex: 1 1 100%; }
-    .pos-articles { max-height: none; }
+    .pos-filters .sheet-section { flex: 0 0 auto; margin: 0; }
+    .pos-filters .item-tabs,
+    .pos-filters .chip-group { flex-wrap: nowrap; }
+    .pos-articles { max-height: none; flex: 1; overflow-y: auto; }
     .pos-details {
         border-left: 0;
         border-top: 1px solid var(--line);
