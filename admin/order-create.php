@@ -147,7 +147,7 @@ layout_start('New Order', 'app');
             <details class="fold">
                 <summary>Add items now (optional)</summary>
                 <div class="fold-body">
-                    <?php render_item_picker($items, $catalog, ['draft_key' => 'admin-order', 'intro' => 'Tap a service to add it, then set the quantity or weight.']); ?>
+                    <?php render_item_picker($items, $catalog, ['draft_key' => 'admin-order', 'intro' => 'Tap a service to add it, then set the quantity or weight.', 'add_item_url' => 'add-item.php']); ?>
                 </div>
             </details>
 

@@ -1,0 +1,36 @@
+<?php
+declare(strict_types=1);
+
+require_once dirname(__DIR__) . '/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/layout.php';
+require_once dirname(__DIR__) . '/includes/orders.php';
+require_once dirname(__DIR__) . '/includes/order-items.php';
+
+$loggedIn = current_user();
+if ($loggedIn !== null && $loggedIn['role'] !== 'customer') {
+    flash('info', 'You are signed in as ' . role_label((string) $loggedIn['role']) . '.');
+    redirect(home_for_role((string) $loggedIn['role']));
+}
+
+$catalog = active_catalog();
+$backUrl = 'schedule-pickup.php';
+
+layout_start('Add Item', 'app');
+?>
+<div class="app-content" style="padding:0;">
+    <div style="padding:.75rem 1rem; border-bottom:1px solid var(--line); background:#fff; display:flex; justify-content:space-between; align-items:center;">
+        <strong>Add Item</strong>
+        <a class="btn btn-sm btn-ghost" href="<?= e(url($backUrl)) ?>">Done &amp; Back</a>
+    </div>
+    <div style="padding:1rem;">
+        <?php render_item_picker([], $catalog, ['draft_key' => 'customer-booking', 'intro' => 'Tap an article to add it. Items are saved automatically.']); ?>
+    </div>
+</div>
+<script>
+window.addEventListener('load', function () {
+    var btn = document.querySelector('[data-add-item]');
+    if (btn) { btn.click(); }
+});
+</script>
+<?php
+layout_end();

@@ -265,7 +265,7 @@ layout_start('Schedule a Pickup', 'customer');
 
             <h3 class="mt-1">3. Items to be washed</h3>
             <p class="subtle">Tap a service to add it, then set how many pieces or how many kilos. Our team confirms the final weight at pickup.</p>
-            <?php render_item_picker($items, $catalog, ['draft_key' => 'customer-booking', 'intro' => 'Tap + Add item and choose a service. Weight is an estimate - the pickup boy measures and verifies the actual kg.']); ?>
+            <?php render_item_picker($items, $catalog, ['draft_key' => 'customer-booking', 'intro' => 'Tap + Add item and choose a service. Weight is an estimate - the pickup boy measures and verifies the actual kg.', 'add_item_url' => 'add-item.php']); ?>
 
             <div class="form-grid mt-1">
                 <div class="form-group">

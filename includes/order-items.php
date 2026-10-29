@@ -364,9 +364,15 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                     <?= e(APP_CURRENCY) ?><span data-subtotal>0.00</span>
                 </strong>
             </div>
-            <button type="button" class="btn btn-primary btn-add-item" data-add-item>
-                <span aria-hidden="true">+</span> Add item
-            </button>
+            <?php if (!empty($options['add_item_url'])): ?>
+                <a class="btn btn-primary btn-add-item" href="<?= e($options['add_item_url']) ?>">
+                    <span aria-hidden="true">+</span> Add item
+                </a>
+            <?php else: ?>
+                <button type="button" class="btn btn-primary btn-add-item" data-add-item>
+                    <span aria-hidden="true">+</span> Add item
+                </button>
+            <?php endif; ?>
         </div>
         <input type="hidden" name="total_amount" value="0">
         <script type="application/json" data-catalog><?= $catalogJson ?></script>

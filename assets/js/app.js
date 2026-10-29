@@ -1046,7 +1046,7 @@
         var restoringDraft = false;
 
         function draftStorageKey() {
-            return 'lf-item-draft:' + window.location.pathname + ':' + draftKey;
+            return 'lf-item-draft:' + draftKey;
         }
 
         function draftEntries() {
