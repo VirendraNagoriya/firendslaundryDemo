@@ -322,16 +322,39 @@
 
         function syncSheetService(resetRate) {
             if (!sheet) { return; }
-            var chip = selectedServiceChip();
-            var mode = chipMode(chip);
             var qtyField = sheet.querySelector('[data-sheet-qty]');
             var qtyLabel = sheet.querySelector('[data-sheet-qty-label]');
             var weightField = sheet.querySelector('[data-sheet-weight]');
             var custom = sheet.querySelector('[data-custom-name]');
             var kgNote = sheet.querySelector('[data-kg-note]');
             var rateInput = sheetRateInput();
-            var serviceId = chip ? chip.value : '';
             var subcategoryId = selectedSubcategoryId();
+
+            // Hide services that have no article in the selected subcategory.
+            var visibleServices = [];
+            picker.querySelectorAll('input[name="sheet_service_id"]').forEach(function (svc) {
+                var hasItem = false;
+                picker.querySelectorAll('[data-quick-item]').forEach(function (btn) {
+                    if (String(btn.getAttribute('data-service-id')) === String(svc.value) &&
+                        (subcategoryId === '0' || String(btn.getAttribute('data-subcategory-id')) === subcategoryId)) {
+                        hasItem = true;
+                    }
+                });
+                var label = svc.closest('label');
+                if (label) { label.hidden = !hasItem; }
+                if (hasItem) { visibleServices.push(svc); }
+            });
+
+            // Auto-select a service that actually has items for this subcategory.
+            var checked = sheet.querySelector('input[name="sheet_service_id"]:checked');
+            if (!checked || (checked.closest('label') && checked.closest('label').hidden)) {
+                var firstVisible = visibleServices[0];
+                if (firstVisible) { firstVisible.checked = true; }
+            }
+
+            var chip = sheet.querySelector('input[name="sheet_service_id"]:checked');
+            var mode = chipMode(chip);
+            var serviceId = chip ? chip.value : '';
 
             // Pieces are always counted. For kg lines they are inventory only and
             // the bill comes from the verified scale weight.

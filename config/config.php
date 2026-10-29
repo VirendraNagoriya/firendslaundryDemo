@@ -34,7 +34,7 @@ if (!defined('APP_CONTACT_EMAIL')) {
     define('APP_CONTACT_EMAIL', 'support@laundryfriends.test');
 }
 if (!defined('APP_ASSET_VERSION')) {
-    define('APP_ASSET_VERSION', '2026-10-29w');
+    define('APP_ASSET_VERSION', '2026-10-29x');
 }
 
 date_default_timezone_set(APP_TIMEZONE);
