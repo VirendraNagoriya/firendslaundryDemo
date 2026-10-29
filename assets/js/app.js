@@ -219,6 +219,11 @@
             return selectedSubcategory().id;
         }
 
+        function sheetSearchTerm() {
+            var input = sheet ? sheet.querySelector('[data-sheet-search]') : null;
+            return input ? input.value.trim().toLowerCase() : '';
+        }
+
         function cardSubcategoryId(select, name) {
             var entry = catalogEntry(select ? select.value : '', name);
             return entry && entry.subcategory_id ? String(entry.subcategory_id) : '0';
@@ -346,9 +351,14 @@
             }
 
             var visible = 0;
+            var term = sheetSearchTerm();
             picker.querySelectorAll('[data-quick-item]').forEach(function (button) {
                 var match = String(button.getAttribute('data-service-id')) === String(serviceId)
                     && (subcategoryId === '0' || String(button.getAttribute('data-subcategory-id')) === subcategoryId);
+                if (match && term !== '') {
+                    var name = (button.textContent || '').toLowerCase();
+                    match = name.indexOf(term) >= 0;
+                }
                 button.hidden = !match;
                 if (match) { visible++; }
             });
@@ -497,6 +507,8 @@
             card.setAttribute('data-min-weight', String(data.min_weight === undefined ? 0 : data.min_weight));
             var reason = card.querySelector('[data-rate-reason]');
             if (reason) { reason.value = data.reason || ''; }
+            var notesInput = card.querySelector('[data-notes-input]');
+            if (notesInput) { notesInput.value = data.notes || ''; }
             applyService(card, mode, catalogRate, false);
             if (data.subcategory_id && String(data.subcategory_id) !== '0') {
                 setCardSubcategory(card, data.subcategory_id, data.subcategory || '');
@@ -664,7 +676,8 @@
             document.body.classList.remove('sheet-open');
         }
 
-        function addFromSheet() {
+        function addFromSheet(keepOpen) {
+            if (keepOpen === undefined) { keepOpen = true; }
             if (!sheet) { return; }
             var nameInput = sheet.querySelector('[data-sheet-name]');
             var rateInput = sheetRateInput();
@@ -732,6 +745,12 @@
             var qty = Math.max(1, Math.floor(num(qtyInput ? qtyInput.value : 1)) || 1);
             var subcategory = selectedSubcategory();
 
+            var remarks = [];
+            sheet.querySelectorAll('[data-remark]:checked').forEach(function (cb) {
+                var label = cb.parentNode ? cb.parentNode.textContent.trim() : '';
+                if (label) { remarks.push(label); }
+            });
+
             var card = addCard({
                 name: name,
                 service_id: serviceId,
@@ -743,7 +762,8 @@
                 rate: rate > 0 ? rate : catalogRate,
                 catalog_rate: catalogRate,
                 min_weight: entry ? num(entry.min_weight_kg) : 0,
-                reason: changed ? reason : ''
+                reason: changed ? reason : '',
+                notes: remarks.join(', ')
             });
 
             var extraChargeAmount = num(sheet.querySelector('[data-extra-charge-amount]') ? sheet.querySelector('[data-extra-charge-amount]').value : 0);
@@ -755,9 +775,21 @@
 
             showNotification('Item added: ' + name + (mode === 'per_kg' ? ' · ' + (weight || 1) + ' kg' : ' · ' + qty + ' pc'));
 
-            closeSheet();
-            if (card && card.scrollIntoView) {
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (keepOpen) {
+                // Reset for the next article.
+                if (nameInput) { nameInput.value = ''; }
+                if (qtyInput) { qtyInput.value = 1; }
+                if (weightInput) { weightInput.value = 1; }
+                if (rateInput) { rateInput.removeAttribute('data-rate-manual'); }
+                sheet.querySelectorAll('[data-remark]').forEach(function (cb) { cb.checked = false; });
+                syncSheetService(true);
+                updateSheetLineTotal();
+                if (nameInput) { nameInput.focus(); }
+            } else {
+                closeSheet();
+                if (card && card.scrollIntoView) {
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
             }
         }
 
@@ -912,6 +944,10 @@
 
             if (target.matches('[data-sheet-name]')) {
                 applyCatalogDefaults(target);
+                return;
+            }
+            if (target.matches('[data-sheet-search]')) {
+                syncSheetService();
                 return;
             }
             if (target.matches('[data-sheet-rate]')) {

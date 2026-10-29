@@ -275,6 +275,7 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
         </div>
         <input type="hidden" name="item_mode[]" value="<?= e($mode) ?>" data-mode-value>
         <input type="hidden" name="item_service_type[]" value="<?= e(service_type_for_name((string) ($selectedService['service_name'] ?? ''))) ?>" data-service-type>
+        <input type="hidden" name="item_notes[]" value="" data-notes-input>
     </div>
     <?php
     return (string) ob_get_clean();
@@ -378,6 +379,9 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                 <h3>Add an item</h3>
                 <button type="button" class="sheet-close" data-sheet-close aria-label="Close">&times;</button>
             </div>
+            <div class="sheet-search">
+                <input type="search" data-sheet-search placeholder="Type item or service... (e.g., Jeans)" autocomplete="off">
+            </div>
             <div class="sheet-body pos-layout">
                 <aside class="pos-filters">
                     <div class="sheet-section">
@@ -473,14 +477,23 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                             <span class="sheet-label">Line total</span>
                             <strong><?= e(APP_CURRENCY) ?><span data-sheet-line-total>0.00</span></strong>
                         </div>
+                        <div class="sheet-field">
+                            <span class="sheet-label">Remarks</span>
+                            <label class="chip-choice" style="display:inline-flex;align-items:center;gap:.4rem;margin-right:.6rem;">
+                                <input type="checkbox" data-remark="stain"> Severe Stain
+                            </label>
+                            <label class="chip-choice" style="display:inline-flex;align-items:center;gap:.4rem;">
+                                <input type="checkbox" data-remark="torn"> Torn/Damaged
+                            </label>
+                        </div>
                     </div>
                     <p class="sheet-error" data-sheet-error hidden></p>
                 </section>
             </div>
 
             <div class="sheet-foot">
-                <button type="button" class="btn btn-ghost" data-sheet-close>Cancel</button>
-                <button type="button" class="btn btn-primary btn-lg" data-sheet-add>Add to order</button>
+                <button type="button" class="btn btn-ghost" data-sheet-close>Done &amp; Close</button>
+                <button type="button" class="btn btn-primary btn-lg" data-sheet-add>Save &amp; Add Next</button>
             </div>
 
             <?php if (can_add_extra_charges(current_user())): ?>

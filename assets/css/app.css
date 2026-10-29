@@ -1184,3 +1184,12 @@ table.data tbody tr:last-child td { border-bottom: 0; }
         background: #fff;
     }
 }
+.sheet-search {
+    padding: .75rem 1rem 0;
+}
+.sheet-search input {
+    width: 100%;
+    font-size: 1rem;
+    padding: .7rem 1rem;
+    border-radius: 12px;
+}
