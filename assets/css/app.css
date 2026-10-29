@@ -1100,14 +1100,16 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 /* Full-screen POS add-item layout */
 .sheet {
     position: fixed;
-    inset: 0;
-    width: 100%;
-    max-width: none;
-    height: 100%;
-    border-radius: 0;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(960px, 92vw);
+    max-height: 88vh;
+    border-radius: var(--radius);
     display: flex;
     flex-direction: column;
     z-index: 70;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, .25);
 }
 .sheet-body.pos-layout {
     flex: 1;
@@ -1140,6 +1142,10 @@ table.data tbody tr:last-child td { border-bottom: 0; }
     justify-content: flex-end;
 }
 @media (max-width: 768px) {
+    .sheet {
+        width: 96vw;
+        max-height: 92vh;
+    }
     .sheet-body.pos-layout {
         grid-template-columns: 1fr;
         grid-template-rows: auto 1fr auto;
