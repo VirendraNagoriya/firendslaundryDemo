@@ -378,117 +378,106 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                 <h3>Add an item</h3>
                 <button type="button" class="sheet-close" data-sheet-close aria-label="Close">&times;</button>
             </div>
-            <div class="sheet-body">
-                <div class="sheet-section">
-                    <div class="item-tabs" role="tablist" aria-label="Item type" data-item-tabs>
-                        <?php foreach (service_categories() as $categoryKey => $categoryLabel): ?>
-                            <button type="button" class="item-tab<?= $categoryKey === 'piece' ? ' active' : '' ?>"
-                                    role="tab" data-item-tab="<?= e($categoryKey) ?>"
-                                    aria-selected="<?= $categoryKey === 'piece' ? 'true' : 'false' ?>">
-                                <?= e($categoryLabel) ?>
-                            </button>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-
-                <div class="sheet-section">
-                    <span class="sheet-label">Subcategory</span>
-                    <div class="chip-group subcategory-chips" data-subcategory-group>
-                        <?php foreach ($subcategories as $subcategory): ?>
-                            <label class="chip-choice">
-                                <input type="radio" name="sheet_subcategory_id" value="<?= (int) $subcategory['id'] ?>"
-                                       data-subcategory="<?= e((string) $subcategory['name']) ?>">
-                                <span><?= e((string) $subcategory['name']) ?></span>
-                            </label>
-                        <?php endforeach; ?>
-                        <label class="chip-choice">
-                            <input type="radio" name="sheet_subcategory_id" value="0" data-subcategory="" checked>
-                            <span>All</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="sheet-section">
-                    <span class="sheet-label">Service</span>
-                    <?php foreach (service_categories() as $categoryKey => $categoryLabel): ?>
-                        <div class="chip-group" data-chip-group="<?= e($categoryKey) ?>"<?= $categoryKey === 'piece' ? '' : ' hidden' ?>>
-                            <?= $serviceChips[$categoryKey] ?? '' ?>
-                        </div>
-                    <?php endforeach; ?>
-                    <p class="subtle" data-tab-empty hidden>No service in this tab yet. Add one in Admin &rarr; Services &amp; items.</p>
-                </div>
-
-                <div class="sheet-section">
-                    <span class="sheet-label">Article</span>
-                    <input type="text" class="sheet-input" data-sheet-name list="<?= e($catalogListId) ?>" placeholder="e.g. Shirt, Saree, Curtains" autocomplete="off">
-                    <p class="subtle" data-sheet-name-hint>Pick a subcategory, then the article. Its service and rate follow automatically.</p>
-                </div>
-
-                <?php if ($quickPicks !== []): ?>
+            <div class="sheet-body pos-layout">
+                <aside class="pos-filters">
                     <div class="sheet-section">
-                        <span class="sheet-label">Tap to add</span>
-                        <div class="quick-picks" data-quick-picks>
-                            <?php foreach ($quickPicks as $pick): ?>
-                                <button type="button" class="quick-pick" data-service-id="<?= (int) $pick['service_id'] ?>"
-                                        data-category="<?= e($pick['category']) ?>"
-                                        data-subcategory-id="<?= (int) $pick['subcategory_id'] ?>"
-                                        data-quick-item="<?= e((string) json_encode($pick, JSON_UNESCAPED_UNICODE)) ?>"
-                                        <?= $pick['category'] === 'piece' ? '' : 'hidden' ?>>
-                                    <strong><?= e($pick['name']) ?></strong>
-                                    <span><?= e($pick['subcategory'] !== '' ? $pick['subcategory'] . ' · ' : '') ?><?= e(APP_CURRENCY) ?><?= e(number_format((float) $pick['rate'], 2)) ?><?= $pick['mode'] === 'per_kg' ? ' / kg' : ($pick['mode'] === 'fixed' ? ' fixed' : ' / pc') ?></span>
-                                </button>
-                            <?php endforeach; ?>
+                        <span class="sheet-label">Type</span>
+                        <div class="item-tabs" role="tablist" aria-label="Item type" data-item-tabs>
+                            <button type="button" class="item-tab active" role="tab" data-item-tab="piece" aria-selected="true">Piece wise</button>
+                            <button type="button" class="item-tab" role="tab" data-item-tab="kg" aria-selected="false">Kg wise</button>
+                            <button type="button" class="item-tab" role="tab" data-item-tab="extra" aria-selected="false">Extra</button>
                         </div>
-                        <p class="subtle quick-picks-empty" data-quick-empty hidden>No articles here yet. Add them in Admin &rarr; Services &amp; items.</p>
                     </div>
-                <?php endif; ?>
 
-                <div class="sheet-grid">
-                    <div class="sheet-field" data-sheet-qty>
-                        <span class="sheet-label" data-sheet-qty-label>How many</span>
-                        <div class="stepper stepper-lg">
-                            <button type="button" data-step="-1" data-target="sheet_qty" aria-label="One less">&minus;</button>
-                            <input type="number" data-sheet-qty min="1" step="1" value="1" inputmode="numeric">
-                            <button type="button" data-step="1" data-target="sheet_qty" aria-label="One more">+</button>
+                    <div class="sheet-section">
+                        <span class="sheet-label">Subcategory</span>
+                        <div class="chip-group subcategory-chips" data-subcategory-group>
+                            <?php foreach ($subcategories as $subcategory): ?>
+                                <label class="chip-choice">
+                                    <input type="radio" name="sheet_subcategory_id" value="<?= (int) $subcategory['id'] ?>"
+                                           data-subcategory="<?= e((string) $subcategory['name']) ?>">
+                                    <span><?= e((string) $subcategory['name']) ?></span>
+                                </label>
+                            <?php endforeach; ?>
+                            <label class="chip-choice">
+                                <input type="radio" name="sheet_subcategory_id" value="0" data-subcategory="" checked>
+                                <span>All</span>
+                            </label>
                         </div>
                     </div>
-                    <div class="sheet-field" data-sheet-weight hidden>
-                        <span class="sheet-label">Estimated weight (kg)</span>
-                        <div class="stepper stepper-lg">
-                            <button type="button" data-step="-0.5" data-target="sheet_weight" aria-label="Half kilo less">&minus;</button>
-                            <input type="number" data-sheet-weight min="0" step="0.5" value="1" inputmode="decimal">
-                            <button type="button" data-step="0.5" data-target="sheet_weight" aria-label="Half kilo more">+</button>
-                        </div>
-                        <span class="item-field-hint" data-sheet-min-weight></span>
+
+                    <div class="sheet-section">
+                        <span class="sheet-label">Service</span>
+                        <?php foreach (service_categories() as $categoryKey => $categoryLabel): ?>
+                            <div class="chip-group" data-chip-group="<?= e($categoryKey) ?>"<?= $categoryKey === 'piece' ? '' : ' hidden' ?>>
+                                <?= $serviceChips[$categoryKey] ?? '' ?>
+                            </div>
+                        <?php endforeach; ?>
+                        <p class="subtle" data-tab-empty hidden>No service in this tab yet. Add one in Admin &rarr; Services &amp; items.</p>
                     </div>
-                    <div class="sheet-field" data-sheet-rate-field<?= $ratePerms['requires_reason'] ? ' data-requires-reason="1"' : '' ?>>
-                        <span class="sheet-label">Rate (<?= e(APP_CURRENCY) ?>)</span>
-                        <?php if ($ratePerms['editable']): ?>
-                            <input type="number" class="sheet-input" data-sheet-rate min="0" max="100000" step="0.5" value="0" inputmode="decimal" data-catalog-rate="0">
-                            <input type="text" class="sheet-input sheet-rate-reason" data-sheet-rate-reason maxlength="255"
-                                   placeholder="Reason for rate change" hidden>
-                            <span class="item-field-hint" data-sheet-rate-original hidden></span>
-                        <?php else: ?>
+                </aside>
+
+                <main class="pos-articles">
+                    <div class="sheet-section">
+                        <span class="sheet-label">Article</span>
+                        <input type="text" class="sheet-input" data-sheet-name list="<?= e($catalogListId) ?>" placeholder="Search or pick an article" autocomplete="off">
+                        <p class="subtle" data-sheet-name-hint>Pick a subcategory, then the article. Its service and rate follow automatically.</p>
+                    </div>
+
+                    <?php if ($quickPicks !== []): ?>
+                        <div class="sheet-section">
+                            <span class="sheet-label">Tap to add</span>
+                            <div class="quick-picks" data-quick-picks>
+                                <?php foreach ($quickPicks as $pick): ?>
+                                    <button type="button" class="quick-pick" data-service-id="<?= (int) $pick['service_id'] ?>"
+                                            data-category="<?= e($pick['category']) ?>"
+                                            data-subcategory-id="<?= (int) $pick['subcategory_id'] ?>"
+                                            data-quick-item="<?= e((string) json_encode($pick, JSON_UNESCAPED_UNICODE)) ?>"
+                                            <?= $pick['category'] === 'piece' ? '' : 'hidden' ?>>
+                                        <strong><?= e($pick['name']) ?></strong>
+                                        <span><?= e($pick['subcategory'] !== '' ? $pick['subcategory'] . ' · ' : '') ?><?= e(APP_CURRENCY) ?><?= e(number_format((float) $pick['rate'], 2)) ?><?= $pick['mode'] === 'per_kg' ? ' / kg' : ($pick['mode'] === 'fixed' ? ' fixed' : ' / pc') ?></span>
+                                    </button>
+                                <?php endforeach; ?>
+                            </div>
+                            <p class="subtle quick-picks-empty" data-quick-empty hidden>No articles here yet. Add them in Admin &rarr; Services &amp; items.</p>
+                        </div>
+                    <?php endif; ?>
+                </main>
+
+                <section class="pos-details">
+                    <div class="sheet-grid">
+                        <div class="sheet-field" data-sheet-qty>
+                            <span class="sheet-label" data-sheet-qty-label>How many</span>
+                            <div class="stepper stepper-lg">
+                                <button type="button" data-step="-1" data-target="sheet_qty" aria-label="One less">&minus;</button>
+                                <input type="number" data-sheet-qty min="1" step="1" value="1" inputmode="numeric">
+                                <button type="button" data-step="1" data-target="sheet_qty" aria-label="One more">+</button>
+                            </div>
+                        </div>
+                        <div class="sheet-field" data-sheet-weight hidden>
+                            <span class="sheet-label">Estimated weight (kg)</span>
+                            <div class="stepper stepper-lg">
+                                <button type="button" data-step="-0.5" data-target="sheet_weight" aria-label="Half kilo less">&minus;</button>
+                                <input type="number" data-sheet-weight min="0" step="0.5" value="1" inputmode="decimal">
+                                <button type="button" data-step="0.5" data-target="sheet_weight" aria-label="Half kilo more">+</button>
+                            </div>
+                            <span class="item-field-hint" data-sheet-min-weight></span>
+                        </div>
+                        <div class="sheet-field" data-sheet-rate-field>
+                            <span class="sheet-label">Rate (?)</span>
                             <input type="hidden" data-sheet-rate value="0" data-catalog-rate="0">
                             <strong class="rate-readonly" data-sheet-rate-readonly>&mdash;</strong>
                             <span class="item-field-hint">Catalog price &middot; fixed</span>
-                        <?php endif; ?>
+                        </div>
+                        <div class="sheet-field sheet-line-total">
+                            <span class="sheet-label">Line total</span>
+                            <strong><?= e(APP_CURRENCY) ?><span data-sheet-line-total>0.00</span></strong>
+                        </div>
                     </div>
-                </div>
-                <div class="sheet-field sheet-line-total">
-                    <span class="sheet-label">Line total</span>
-                    <strong><?= e(APP_CURRENCY) ?><span data-sheet-line-total>0.00</span></strong>
-                </div>
-                <p class="sheet-error" data-sheet-error hidden></p>
+                    <p class="sheet-error" data-sheet-error hidden></p>
+                </section>
             </div>
-            <div class="sheet-section sheet-filters-bottom">
-                <span class="sheet-label">Quick type filter</span>
-                <div class="item-tabs" role="tablist" aria-label="Item type (bottom)" data-item-tabs-bottom>
-                    <button type="button" class="item-tab active" role="tab" data-item-tab-bottom="piece" aria-selected="true">Piece wise</button>
-                    <button type="button" class="item-tab" role="tab" data-item-tab-bottom="kg" aria-selected="false">Kg wise</button>
-                    <button type="button" class="item-tab" role="tab" data-item-tab-bottom="extra" aria-selected="false">Extra</button>
-                </div>
-            </div>
+
             <div class="sheet-foot">
                 <button type="button" class="btn btn-ghost" data-sheet-close>Cancel</button>
                 <button type="button" class="btn btn-primary btn-lg" data-sheet-add>Add to order</button>
