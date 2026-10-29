@@ -1114,11 +1114,12 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 .sheet-body.pos-layout {
     flex: 1;
     display: grid;
-    grid-template-columns: 280px 1fr;
-    grid-template-rows: 1fr auto;
+    grid-template-columns: 220px 1fr 260px;
+    grid-template-rows: 1fr;
     gap: 1rem;
     padding: 1rem;
     overflow: hidden;
+    min-height: 0;
 }
 .pos-filters {
     overflow-y: auto;
@@ -1130,9 +1131,9 @@ table.data tbody tr:last-child td { border-bottom: 0; }
     padding-left: .25rem;
 }
 .pos-details {
-    grid-column: 1 / -1;
-    border-top: 1px solid var(--line);
-    padding-top: .75rem;
+    overflow-y: auto;
+    border-left: 1px solid var(--line);
+    padding-left: 1rem;
 }
 .sheet[hidden] { display: none !important; }
     border-top: 1px solid var(--line);
@@ -1158,4 +1159,10 @@ table.data tbody tr:last-child td { border-bottom: 0; }
         max-height: 40vh;
     }
     .pos-articles { max-height: 45vh; }
+    .pos-details {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+        padding-left: 0;
+        padding-top: .75rem;
+    }
 }
