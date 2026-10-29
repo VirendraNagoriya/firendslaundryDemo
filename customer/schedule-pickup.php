@@ -33,6 +33,8 @@ $catalog = active_catalog();
 $deliveryCharge = (float) setting('default_delivery_charge', '40');
 $taxPercent = (float) setting('tax_percent', '0');
 
+$activeOffers = db_all('SELECT * FROM offers WHERE is_active = 1 AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW()) ORDER BY created_at DESC');
+
 $openDues = 0.0;
 $lastPending = null;
 if ($customer !== null) {
@@ -57,6 +59,7 @@ $form = [
     'pincode' => (string) ($customer['pincode'] ?? ''),
     'scheduled_pickup_date' => today(),
     'notes' => '',
+    'coupon_code' => '',
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -149,6 +152,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $tax = round($subtotal * ($taxPercent / 100), 2);
 
+                // Apply coupon if provided.
+                $discount = 0.0;
+                $couponCode = strtoupper(trim((string) ($form['coupon_code'] ?? '')));
+                if ($couponCode !== '') {
+                    $coupon = db_row('SELECT * FROM coupons WHERE code = ? AND is_active = 1', [$couponCode]);
+                    if ($coupon !== null) {
+                        $now = date('Y-m-d H:i:s');
+                        $expired = $coupon['expires_at'] !== null && $coupon['expires_at'] < $now;
+                        $notStarted = false; // coupons have no starts_at
+                        $maxed = $coupon['max_uses'] !== null && (int) $coupon['used_count'] >= (int) $coupon['max_uses'];
+                        $minOk = $subtotal >= (float) $coupon['min_order'];
+                        if (!$expired && !$maxed && $minOk) {
+                            if ($coupon['discount_type'] === 'percent') {
+                                $discount = round($subtotal * ((float) $coupon['discount_value'] / 100), 2);
+                            } else {
+                                $discount = min($subtotal, (float) $coupon['discount_value']);
+                            }
+                            db_exec('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?', [(int) $coupon['id']]);
+                        }
+                    }
+                }
+
                 $orderId = create_order([
                     'customer_id' => $customerId,
                     'source' => 'customer',
@@ -158,7 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'contact_name' => $form['name'],
                     'contact_phone' => $form['phone'],
                     'delivery_address' => trim($form['address'] . ', ' . $form['landmark'] . ', ' . $form['city'] . ' - ' . $form['pincode'], ', '),
-                    'discount_amount' => 0,
+                    'discount_amount' => $discount,
                     'delivery_charge' => $deliveryCharge,
                     'tax_amount' => $tax,
                     'notes' => $form['notes'],
@@ -206,6 +231,20 @@ layout_start('Schedule a Pickup', 'customer');
 
         <form method="post" action="<?= e(url('customer/schedule-pickup.php')) ?>" data-calc-items data-tax-percent="<?= e((string) $taxPercent) ?>">
             <?= csrf_field() ?>
+            <?php if ($activeOffers !== []): ?>
+                <div class="panel" style="background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;margin-bottom:1rem;">
+                    <div class="panel-body">
+                        <?php foreach ($activeOffers as $o): ?>
+                            <div style="margin-bottom:.5rem;">
+                                <strong><?= e((string) $o['title']) ?></strong>
+                                <?php if (!empty($o['description'])): ?>
+                                    <span style="opacity:.9;"> — <?= e((string) $o['description']) ?></span>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
             <input type="hidden" name="delivery_charge" value="<?= e((string) $deliveryCharge) ?>">
 
             <?php if ($isGuest): ?>
@@ -289,6 +328,10 @@ layout_start('Schedule a Pickup', 'customer');
                         <strong>included</strong>
                     </div>
                 <?php endif; ?>
+                <div class="form-group">
+                    <label for="coupon_code">Coupon code (optional)</label>
+                    <input type="text" id="coupon_code" name="coupon_code" value="<?= e($form['coupon_code']) ?>" placeholder="Enter code">
+                </div>
                 <div class="total-row grand">
                     <span>Estimated total</span>
                     <strong><?= e(APP_CURRENCY) ?><span data-total>0.00</span></strong>
