@@ -1173,8 +1173,6 @@ table.data tbody tr:last-child td { border-bottom: 0; }
     .pos-filters .sheet-section { flex: 0 0 auto; margin: 0; }
     .pos-filters .item-tabs,
     .pos-filters .chip-group { flex-wrap: nowrap; }
-    .pos-filters [data-chip-group],
-    .pos-filters [data-tab-empty],
     .pos-details [data-remark],
     .pos-details .sheet-field:has([data-remark]) {
         display: none;
