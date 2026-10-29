@@ -21,7 +21,7 @@ SET NAMES utf8mb4;
 CREATE TABLE IF NOT EXISTS `services` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `service_name` VARCHAR(120) NOT NULL,
-  `price_mode` ENUM('per_piece','per_kg') NOT NULL DEFAULT 'per_piece',
+  `price_mode` ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece',
   `category` ENUM('piece','kg','extra') NOT NULL DEFAULT 'piece',
   `rate` DECIMAL(12,2) NOT NULL DEFAULT 0,
   `min_weight_kg` DECIMAL(10,3) NOT NULL DEFAULT 0,
@@ -33,7 +33,33 @@ CREATE TABLE IF NOT EXISTS `services` (
   KEY `idx_services_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-SET @db := DATABASE();
+-- 1b) subcategories table (Subcategory -> Article -> Service -> Pricing metric)
+CREATE TABLE IF NOT EXISTS `subcategories` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(80) NOT NULL,
+  `slug` VARCHAR(80) NOT NULL,
+  `sort_order` INT NOT NULL DEFAULT 0,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_subcategories_slug` (`slug`),
+  KEY `idx_subcategories_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Seed starter subcategories (idempotent)
+INSERT INTO `subcategories` (`name`, `slug`, `sort_order`, `is_active`) VALUES
+('Men', 'men', 10, 1),
+('Women', 'women', 20, 1),
+('Kids', 'kids', 30, 1),
+('Household', 'household', 40, 1),
+('Accessories', 'accessories', 50, 1)
+ON DUPLICATE KEY UPDATE `name` = VALUES(`name`);
+
+-- 1c) widen price_mode enums to include fixed
+ALTER TABLE `services` MODIFY `price_mode` ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece';
+ALTER TABLE `laundry_items` MODIFY `price_mode` ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece';
+ALTER TABLE `order_items` MODIFY `price_mode` ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece';
 
 -- 2) laundry_items.service_id
 SET @sql := IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=@db AND TABLE_NAME='laundry_items' AND COLUMN_NAME='service_id')=0,
@@ -80,7 +106,27 @@ SET @sql := IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHE
   'SET @noop = 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- 5) Create services from the existing catalog
+-- 4b) subcategory columns
+SET @sql := IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=@db AND TABLE_NAME='laundry_items' AND COLUMN_NAME='subcategory_id')=0,
+  'ALTER TABLE `laundry_items` ADD COLUMN `subcategory_id` INT UNSIGNED NULL AFTER `service_id`',
+  'SET @noop = 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=@db AND TABLE_NAME='order_items' AND COLUMN_NAME='subcategory_id')=0,
+  'ALTER TABLE `order_items` ADD COLUMN `subcategory_id` INT UNSIGNED NULL AFTER `service_id`',
+  'SET @noop = 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=@db AND TABLE_NAME='order_items' AND COLUMN_NAME='subcategory_name')=0,
+  'ALTER TABLE `order_items` ADD COLUMN `subcategory_name` VARCHAR(80) NULL AFTER `subcategory_id`',
+  'SET @noop = 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 4c) index on subcategory
+SET @sql := IF((SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=@db AND TABLE_NAME='laundry_items' AND INDEX_NAME='idx_laundry_items_subcategory')=0,
+  'ALTER TABLE `laundry_items` ADD KEY `idx_laundry_items_subcategory` (`subcategory_id`)',
+  'SET @noop = 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 INSERT INTO `services` (`service_name`, `price_mode`, `category`, `rate`, `is_active`)
 SELECT
   CASE

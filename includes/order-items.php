@@ -10,13 +10,16 @@ require_once __DIR__ . '/extra-charges.php';
 function active_catalog(): array
 {
     ensure_service_category_schema();
+    ensure_subcategory_schema();
     return db_all(
         'SELECT i.*, s.service_name, s.price_mode AS service_price_mode, s.rate AS service_rate,
-                s.category AS service_category
+                s.category AS service_category, sc.name AS subcategory_name
          FROM laundry_items i
          JOIN services s ON s.id = i.service_id
+         LEFT JOIN subcategories sc ON sc.id = i.subcategory_id
          WHERE i.is_active = 1 AND s.is_active = 1
-         ORDER BY FIELD(s.category, \'piece\', \'kg\', \'extra\'), s.service_name, i.item_name'
+         ORDER BY FIELD(s.category, \'piece\', \'kg\', \'extra\'),
+                  sc.sort_order, sc.name, s.service_name, i.item_name'
     );
 }
 
@@ -101,6 +104,8 @@ function catalog_rate_index(): array
             'name' => (string) $row['item_name'],
             'service_id' => (int) $row['service_id'],
             'service_name' => (string) ($row['service_name'] ?? ''),
+            'subcategory_id' => (int) ($row['subcategory_id'] ?? 0),
+            'subcategory' => (string) ($row['subcategory_name'] ?? ''),
             'category' => service_category_for($row),
             'mode' => $mode,
             'rate' => service_effective_rate(
@@ -142,7 +147,7 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
     }
 
     $mode = (string) ($item['price_mode'] ?? ($selectedService['price_mode'] ?? 'per_piece'));
-    $mode = $mode === 'per_kg' ? 'per_kg' : 'per_piece';
+    $mode = in_array($mode, ['per_kg', 'fixed'], true) ? $mode : 'per_piece';
     $category = $selectedService !== null
         ? service_category_for($selectedService)
         : ($mode === 'per_kg' ? 'kg' : 'piece');
@@ -164,9 +169,15 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
         : ($selectedService !== null ? (float) $selectedService['min_weight_kg'] : 0.0);
     $ratePerms = rate_override_permissions();
 
+    $subcategoryId = (int) ($item['subcategory_id'] ?? ($catalogEntry['subcategory_id'] ?? 0));
+    $subcategoryName = (string) ($item['subcategory_name'] ?? ($catalogEntry['subcategory'] ?? ''));
+    $weightBilled = $mode === 'per_kg';
+
     $serviceOptions = '';
     foreach ($services as $service) {
-        $serviceMode = (string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
+        $serviceMode = in_array((string) $service['price_mode'], ['per_kg', 'fixed'], true)
+            ? (string) $service['price_mode']
+            : 'per_piece';
         $serviceOptions .= '<option value="' . (int) $service['id'] . '"'
             . ' data-mode="' . e($serviceMode) . '"'
             . ' data-category="' . e(service_category_for($service)) . '"'
@@ -174,7 +185,7 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
             . ' data-rate="' . e((string) (float) $service['rate']) . '"'
             . ((int) $service['id'] === $serviceId ? ' selected' : '') . '>'
             . e((string) $service['service_name'])
-            . ' (' . ($serviceMode === 'per_kg' ? 'per kg' : 'per piece') . ')'
+            . ' (' . ($serviceMode === 'per_kg' ? 'per kg' : ($serviceMode === 'fixed' ? 'fixed' : 'per piece')) . ')'
             . '</option>';
     }
 
@@ -197,22 +208,30 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
                 <span class="item-field-label">Service</span>
                 <select name="item_service_id[]" data-service-select><?= $serviceOptions ?></select>
             </label>
-            <div class="item-field" data-field-qty<?= $mode === 'per_kg' ? ' hidden' : '' ?>>
-                <span class="item-field-label">How many</span>
+            <div class="item-field item-field-subcategory">
+                <span class="item-field-label">Subcategory</span>
+                <strong class="rate-readonly" data-subcategory-label><?= e($subcategoryName !== '' ? $subcategoryName : '—') ?></strong>
+                <input type="hidden" name="item_subcategory_id[]" value="<?= e((string) $subcategoryId) ?>" data-subcategory-input>
+            </div>
+            <div class="item-field" data-field-qty>
+                <span class="item-field-label" data-qty-label><?= $weightBilled ? 'Pieces (tracking)' : 'How many' ?></span>
                 <div class="stepper">
                     <button type="button" data-step="-1" data-target="qty" aria-label="One less">&minus;</button>
                     <input type="number" name="item_qty[]" min="1" step="1" value="<?= e((string) $qty) ?>" inputmode="numeric">
                     <button type="button" data-step="1" data-target="qty" aria-label="One more">+</button>
                 </div>
+                <?php if ($weightBilled): ?>
+                    <span class="item-field-hint">Counted for inventory only. Billing uses the scale weight.</span>
+                <?php endif; ?>
             </div>
-            <div class="item-field" data-field-weight<?= $mode === 'per_piece' ? ' hidden' : '' ?>>
+            <div class="item-field" data-field-weight<?= $weightBilled ? '' : ' hidden' ?>>
                 <span class="item-field-label">Weight (kg)</span>
                 <div class="stepper">
                     <button type="button" data-step="-0.5" data-target="weight" aria-label="Half kilo less">&minus;</button>
                     <input type="number" name="item_weight[]" min="0" step="0.5" value="<?= e((string) $weight) ?>" inputmode="decimal">
                     <button type="button" data-step="0.5" data-target="weight" aria-label="Half kilo more">+</button>
                 </div>
-                <?php if ($mode === 'per_kg'): ?>
+                <?php if ($weightBilled): ?>
                     <span class="item-field-hint">
                         Weight will be measured / verified by the pickup boy.<?php if ($minWeight > 0): ?> Minimum <?= e(rtrim(rtrim(number_format($minWeight, 3, '.', ''), '0'), '.')) ?> kg.<?php endif; ?>
                         Total cost: <?= e(APP_CURRENCY) ?><span class="weight-cost">0.00</span>
@@ -220,7 +239,7 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
                 <?php endif; ?>
             </div>
             <label class="item-field" data-rate-field>
-                <span class="item-field-label">Rate (<?= e(APP_CURRENCY) ?>)</span>
+                <span class="item-field-label">Rate (<?= e(APP_CURRENCY) ?>)<?= $mode === 'fixed' ? ' &middot; fixed' : '' ?></span>
                 <?php if ($ratePerms['editable']): ?>
                     <input type="number" name="item_rate[]" min="0" max="100000" step="0.5" value="<?= e((string) $rate) ?>"
                            inputmode="decimal" data-rate-input data-catalog-rate="<?= e((string) $catalogRate) ?>">
@@ -230,7 +249,7 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
                 <?php else: ?>
                     <input type="hidden" name="item_rate[]" value="<?= e((string) $rate) ?>" data-rate-input data-catalog-rate="<?= e((string) $catalogRate) ?>">
                     <strong class="rate-readonly"><?= e(money($rate)) ?></strong>
-                    <span class="item-field-hint"><?= $mode === 'per_kg' ? 'Per kg' : 'Per piece' ?> &middot; fixed price</span>
+                    <span class="item-field-hint"><?= $mode === 'per_kg' ? 'Per kg' : ($mode === 'fixed' ? 'Fixed rate' : 'Per piece') ?> &middot; fixed price</span>
                 <?php endif; ?>
             </label>
             <?php if ($ratePerms['editable']): ?>
@@ -271,6 +290,7 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
     $instance++;
     $catalogListId = 'catalogList' . $instance;
     $services = active_services();
+    $subcategories = active_subcategories();
     $ratePerms = rate_override_permissions();
 
     $quickPicks = [];
@@ -284,6 +304,8 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
             'name' => (string) $row['item_name'],
             'service_id' => (int) $row['service_id'],
             'service' => (string) ($row['service_name'] ?? ''),
+            'subcategory_id' => (int) ($row['subcategory_id'] ?? 0),
+            'subcategory' => (string) ($row['subcategory_name'] ?? ''),
             'category' => service_category_for($row),
             'service_type' => (string) $row['service_type'],
             'mode' => $mode,
@@ -296,7 +318,9 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
     $serviceChips = [];
     $chipsChecked = false;
     foreach ($services as $service) {
-        $mode = (string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
+        $mode = in_array((string) $service['price_mode'], ['per_kg', 'fixed'], true)
+            ? (string) $service['price_mode']
+            : 'per_piece';
         $category = service_category_for($service);
         $checked = !$chipsChecked && $category === 'piece';
         if ($checked) {
@@ -368,6 +392,23 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                 </div>
 
                 <div class="sheet-section">
+                    <span class="sheet-label">Subcategory</span>
+                    <div class="chip-group subcategory-chips" data-subcategory-group>
+                        <?php foreach ($subcategories as $subcategory): ?>
+                            <label class="chip-choice">
+                                <input type="radio" name="sheet_subcategory_id" value="<?= (int) $subcategory['id'] ?>"
+                                       data-subcategory="<?= e((string) $subcategory['name']) ?>">
+                                <span><?= e((string) $subcategory['name']) ?></span>
+                            </label>
+                        <?php endforeach; ?>
+                        <label class="chip-choice">
+                            <input type="radio" name="sheet_subcategory_id" value="0" data-subcategory="" checked>
+                            <span>All</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="sheet-section">
                     <span class="sheet-label">Service</span>
                     <?php foreach (service_categories() as $categoryKey => $categoryLabel): ?>
                         <div class="chip-group" data-chip-group="<?= e($categoryKey) ?>"<?= $categoryKey === 'piece' ? '' : ' hidden' ?>>
@@ -378,9 +419,9 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                 </div>
 
                 <div class="sheet-section">
-                    <span class="sheet-label">Item name</span>
+                    <span class="sheet-label">Article</span>
                     <input type="text" class="sheet-input" data-sheet-name list="<?= e($catalogListId) ?>" placeholder="e.g. Shirt, Saree, Curtains" autocomplete="off">
-                    <p class="subtle" data-sheet-name-hint>Pick a service, then type or choose the item.</p>
+                    <p class="subtle" data-sheet-name-hint>Pick a subcategory, then the article. Its service and rate follow automatically.</p>
                 </div>
 
                 <?php if ($quickPicks !== []): ?>
@@ -390,20 +431,21 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                             <?php foreach ($quickPicks as $pick): ?>
                                 <button type="button" class="quick-pick" data-service-id="<?= (int) $pick['service_id'] ?>"
                                         data-category="<?= e($pick['category']) ?>"
+                                        data-subcategory-id="<?= (int) $pick['subcategory_id'] ?>"
                                         data-quick-item="<?= e((string) json_encode($pick, JSON_UNESCAPED_UNICODE)) ?>"
                                         <?= $pick['category'] === 'piece' ? '' : 'hidden' ?>>
                                     <strong><?= e($pick['name']) ?></strong>
-                                    <span><?= e(APP_CURRENCY) ?><?= e(number_format((float) $pick['rate'], 2)) ?><?= $pick['mode'] === 'per_kg' ? ' / kg' : ' / pc' ?></span>
+                                    <span><?= e($pick['subcategory'] !== '' ? $pick['subcategory'] . ' · ' : '') ?><?= e(APP_CURRENCY) ?><?= e(number_format((float) $pick['rate'], 2)) ?><?= $pick['mode'] === 'per_kg' ? ' / kg' : ($pick['mode'] === 'fixed' ? ' fixed' : ' / pc') ?></span>
                                 </button>
                             <?php endforeach; ?>
                         </div>
-                        <p class="subtle quick-picks-empty" data-quick-empty hidden>This tab has no catalog items yet. Add them in Admin &rarr; Services &amp; items.</p>
+                        <p class="subtle quick-picks-empty" data-quick-empty hidden>No articles here yet. Add them in Admin &rarr; Services &amp; items.</p>
                     </div>
                 <?php endif; ?>
 
                 <div class="sheet-grid">
                     <div class="sheet-field" data-sheet-qty>
-                        <span class="sheet-label">How many</span>
+                        <span class="sheet-label" data-sheet-qty-label>How many</span>
                         <div class="stepper stepper-lg">
                             <button type="button" data-step="-1" data-target="sheet_qty" aria-label="One less">&minus;</button>
                             <input type="number" data-sheet-qty min="1" step="1" value="1" inputmode="numeric">
@@ -479,6 +521,7 @@ function merge_duplicate_order_items(array $items): array
     $merged = [];
     foreach ($items as $item) {
         $key = (int) ($item['service_id'] ?? 0)
+            . '|' . (int) ($item['subcategory_id'] ?? 0)
             . '|' . mb_strtolower(trim((string) ($item['item_name'] ?? '')))
             . '|' . (string) ($item['price_mode'] ?? 'per_piece')
             . '|' . number_format((float) ($item['rate'] ?? 0), 2, '.', '');
@@ -490,6 +533,7 @@ function merge_duplicate_order_items(array $items): array
 
         if ((string) $item['price_mode'] === 'per_kg') {
             $merged[$key]['weight_kg'] = round((float) $merged[$key]['weight_kg'] + (float) $item['weight_kg'], 3);
+            $merged[$key]['qty'] = (int) $merged[$key]['qty'] + (int) $item['qty'];
         } else {
             $merged[$key]['qty'] = (int) $merged[$key]['qty'] + (int) $item['qty'];
         }
@@ -514,6 +558,7 @@ function collect_items_from_post(bool $weightsVerified = false, ?array &$errors 
 {
     $names = $_POST['item_name'] ?? [];
     $serviceIds = $_POST['item_service_id'] ?? [];
+    $subcategoryIds = $_POST['item_subcategory_id'] ?? [];
     $serviceTypes = $_POST['item_service_type'] ?? [];
     $modes = $_POST['item_mode'] ?? [];
     $qtys = $_POST['item_qty'] ?? [];
@@ -530,6 +575,11 @@ function collect_items_from_post(bool $weightsVerified = false, ?array &$errors 
     $perms = rate_override_permissions();
     if (function_exists('ensure_order_item_pricing_schema')) {
         ensure_order_item_pricing_schema();
+    }
+    ensure_subcategory_schema();
+    $subcategories = [];
+    foreach (active_subcategories() as $subcategory) {
+        $subcategories[(int) $subcategory['id']] = (string) $subcategory['name'];
     }
     $user = current_user();
     $catalog = catalog_rate_index();
@@ -549,9 +599,20 @@ function collect_items_from_post(bool $weightsVerified = false, ?array &$errors 
         $serviceName = (string) ($service['service_name'] ?? '');
         $postedMode = (string) ($modes[$index] ?? 'per_piece');
         $mode = $service !== null
-            ? ((string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece')
-            : ($postedMode === 'per_kg' ? 'per_kg' : 'per_piece');
+            ? (in_array((string) $service['price_mode'], ['per_kg', 'fixed'], true)
+                ? (string) $service['price_mode']
+                : 'per_piece')
+            : (in_array($postedMode, ['per_kg', 'fixed'], true) ? $postedMode : 'per_piece');
         $entry = $catalog[$serviceId . '|' . mb_strtolower($name)] ?? null;
+
+        $postedSubcategoryId = (int) ($subcategoryIds[$index] ?? 0);
+        $subcategoryId = $postedSubcategoryId > 0 && isset($subcategories[$postedSubcategoryId])
+            ? $postedSubcategoryId
+            : (int) ($entry['subcategory_id'] ?? 0);
+        if ($subcategoryId > 0 && !isset($subcategories[$subcategoryId])) {
+            $subcategoryId = 0;
+        }
+        $subcategoryName = $subcategoryId > 0 ? $subcategories[$subcategoryId] : '';
 
         if ($mode === 'per_kg' && $entry === null) {
             if ($errors !== null) {
@@ -614,6 +675,8 @@ function collect_items_from_post(bool $weightsVerified = false, ?array &$errors 
         $items[] = [
             'item_name' => $entry !== null ? (string) $entry['name'] : $name,
             'service_id' => $serviceId,
+            'subcategory_id' => $subcategoryId > 0 ? $subcategoryId : null,
+            'subcategory_name' => $subcategoryName !== '' ? $subcategoryName : null,
             'service_type' => (string) ($serviceTypes[$index] ?? ''),
             'price_mode' => $mode,
             'qty' => $qty,

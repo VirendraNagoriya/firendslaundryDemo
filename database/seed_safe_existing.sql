@@ -34,36 +34,47 @@ WHERE NOT EXISTS (SELECT 1 FROM `customers` WHERE phone_key = '9812345670');
 -- ------------------------------------------------------------
 -- 2) Laundry catalog (skipped if the service/item already exists)
 -- ------------------------------------------------------------
+INSERT IGNORE INTO `subcategories` (`name`, `slug`, `sort_order`, `is_active`) VALUES
+('Men', 'men', 10, 1),
+('Women', 'women', 20, 1),
+('Kids', 'kids', 30, 1),
+('Household', 'household', 40, 1),
+('Accessories', 'accessories', 50, 1);
+
 INSERT IGNORE INTO `services` (`service_name`, `price_mode`, `category`, `rate`, `is_active`) VALUES
 ('Wash & Iron', 'per_piece', 'piece', 15.00, 1),
 ('Wash & Fold', 'per_piece', 'piece', 10.00, 1),
 ('Wash & Fold (kg)', 'per_kg', 'kg', 60.00, 1),
 ('Dry Clean', 'per_piece', 'piece', 90.00, 1),
 ('Shoe Cleaning', 'per_piece', 'piece', 200.00, 1),
-('Express & Add-ons', 'per_piece', 'extra', 50.00, 1);
+('Express & Add-ons', 'per_piece', 'extra', 50.00, 1),
+('Specialty Care (fixed)', 'fixed', 'piece', 250.00, 1);
 
 -- Every item must belong to a service. Without service_id the item picker and
 -- catalog page cannot load the item, so resolve the service by name here.
-INSERT IGNORE INTO `laundry_items` (`service_id`, `item_name`, `service_type`, `price_mode`, `rate_per_piece`, `rate_per_kg`, `is_active`)
-SELECT s.id, c.item_name, c.service_type, c.price_mode, c.rate_per_piece, c.rate_per_kg, 1
+INSERT IGNORE INTO `laundry_items` (`service_id`, `subcategory_id`, `item_name`, `service_type`, `price_mode`, `rate_per_piece`, `rate_per_kg`, `is_active`)
+SELECT s.id, sc.id, c.item_name, c.service_type, c.price_mode, c.rate_per_piece, c.rate_per_kg, 1
 FROM (
-  SELECT 'Shirt' AS item_name, 'Wash & Iron' AS service_name, 'wash_iron' AS service_type, 'per_piece' AS price_mode, 15.00 AS rate_per_piece, 0 AS rate_per_kg
-  UNION ALL SELECT 'Trouser', 'Wash & Iron', 'wash_iron', 'per_piece', 20.00, 0
-  UNION ALL SELECT 'Jeans', 'Wash & Iron', 'wash_iron', 'per_piece', 25.00, 0
-  UNION ALL SELECT 'T-Shirt', 'Wash & Fold', 'wash_fold', 'per_piece', 10.00, 0
-  UNION ALL SELECT 'Towel Set', 'Wash & Fold', 'wash_fold', 'per_piece', 12.00, 0
-  UNION ALL SELECT 'Curtain', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 90.00
-  UNION ALL SELECT 'Bed Cover', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 110.00
-  UNION ALL SELECT 'Mixed Laundry (kg)', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60.00
-  UNION ALL SELECT 'Blanket', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 80.00
-  UNION ALL SELECT 'Dress / Saree', 'Dry Clean', 'dry_clean', 'per_piece', 90.00, 0
-  UNION ALL SELECT 'Suit / Blazer', 'Dry Clean', 'dry_clean', 'per_piece', 120.00, 0
-  UNION ALL SELECT 'Sneakers', 'Shoe Cleaning', 'shoe_clean', 'per_piece', 200.00, 0
-  UNION ALL SELECT 'Express Delivery', 'Express & Add-ons', 'other', 'per_piece', 50.00, 0
-  UNION ALL SELECT 'Stain Removal', 'Express & Add-ons', 'other', 'per_piece', 30.00, 0
-  UNION ALL SELECT 'Extra Detergent', 'Express & Add-ons', 'other', 'per_piece', 20.00, 0
+  SELECT 'Shirt' AS item_name, 'Wash & Iron' AS service_name, 'wash_iron' AS service_type, 'per_piece' AS price_mode, 15.00 AS rate_per_piece, 0 AS rate_per_kg, 'Men' AS subcategory_name
+  UNION ALL SELECT 'Trouser', 'Wash & Iron', 'wash_iron', 'per_piece', 20.00, 0, 'Men'
+  UNION ALL SELECT 'Jeans', 'Wash & Iron', 'wash_iron', 'per_piece', 25.00, 0, 'Men'
+  UNION ALL SELECT 'T-Shirt', 'Wash & Fold', 'wash_fold', 'per_piece', 10.00, 0, 'Men'
+  UNION ALL SELECT 'Towel Set', 'Wash & Fold', 'wash_fold', 'per_piece', 12.00, 0, 'Household'
+  UNION ALL SELECT 'Curtain', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 90.00, 'Household'
+  UNION ALL SELECT 'Bed Cover', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 110.00, 'Household'
+  UNION ALL SELECT 'Mixed Laundry (kg)', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60.00, 'Household'
+  UNION ALL SELECT 'Blanket', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 80.00, 'Household'
+  UNION ALL SELECT 'Dress / Saree', 'Dry Clean', 'dry_clean', 'per_piece', 90.00, 0, 'Women'
+  UNION ALL SELECT 'Suit / Blazer', 'Dry Clean', 'dry_clean', 'per_piece', 120.00, 0, 'Men'
+  UNION ALL SELECT 'Sneakers', 'Shoe Cleaning', 'shoe_clean', 'per_piece', 200.00, 0, 'Accessories'
+  UNION ALL SELECT 'Helmet', 'Specialty Care (fixed)', 'other', 'fixed', 250.00, 0, 'Accessories'
+  UNION ALL SELECT 'Leather Shoes', 'Specialty Care (fixed)', 'other', 'fixed', 300.00, 0, 'Accessories'
+  UNION ALL SELECT 'Express Delivery', 'Express & Add-ons', 'other', 'fixed', 50.00, 0, 'Accessories'
+  UNION ALL SELECT 'Stain Removal', 'Express & Add-ons', 'other', 'fixed', 30.00, 0, 'Accessories'
+  UNION ALL SELECT 'Extra Detergent', 'Express & Add-ons', 'other', 'fixed', 20.00, 0, 'Accessories'
 ) AS c
-JOIN `services` s ON s.service_name = c.service_name;
+JOIN `services` s ON s.service_name = c.service_name
+LEFT JOIN `subcategories` sc ON sc.name = c.subcategory_name;
 
 -- ------------------------------------------------------------
 -- 3) Settings (skipped if the setting already exists)

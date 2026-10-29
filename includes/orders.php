@@ -179,7 +179,9 @@ function normalise_order_item(array $item): ?array
     if ($service !== null) {
         $serviceId = (int) $service['id'];
         $serviceName = (string) $service['service_name'];
-        $mode = (string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
+        $mode = in_array((string) $service['price_mode'], ['per_kg', 'fixed'], true)
+            ? (string) $service['price_mode']
+            : 'per_piece';
         $catalog = db_row('SELECT * FROM laundry_items WHERE service_id = ? AND item_name = ? LIMIT 1', [$serviceId, $name]);
         // Kg services are billed from a fixed catalog: a free-text name cannot
         // be priced by weight, so it is rejected instead of silently saved.
@@ -201,9 +203,18 @@ function normalise_order_item(array $item): ?array
         $weight = max(0.0, (float) ($item['weight_kg'] ?? 0));
         $verified = $mode === 'per_kg' ? (int) ($item['weight_verified'] ?? 0) : 1;
 
+        $subcategoryId = (int) ($item['subcategory_id'] ?? ($catalog['subcategory_id'] ?? 0));
+        $subcategoryName = trim((string) ($item['subcategory_name'] ?? ''));
+        if ($subcategoryName === '' && $subcategoryId > 0) {
+            $subcategoryRow = db_row('SELECT name FROM subcategories WHERE id = ?', [$subcategoryId]);
+            $subcategoryName = (string) ($subcategoryRow['name'] ?? '');
+        }
+
         return [
             'service_id' => $serviceId,
             'service_name' => $serviceName,
+            'subcategory_id' => $subcategoryId > 0 ? $subcategoryId : null,
+            'subcategory_name' => $subcategoryName !== '' ? $subcategoryName : null,
             'service_type' => service_type_for_name($serviceName),
             'item_name' => $name,
             'price_mode' => $mode,
@@ -229,7 +240,9 @@ function normalise_order_item(array $item): ?array
     }
 
     // Legacy fallback so old callers/tests that only post service_type keep working.
-    $mode = (string) ($item['price_mode'] ?? 'per_piece') === 'per_kg' ? 'per_kg' : 'per_piece';
+    $mode = in_array((string) ($item['price_mode'] ?? 'per_piece'), ['per_kg', 'fixed'], true)
+        ? (string) $item['price_mode']
+        : 'per_piece';
     $rate = (float) ($item['rate'] ?? 0);
     $catalogRate = (float) ($item['catalog_rate'] ?? 0);
     if ($catalogRate <= 0) {
@@ -243,6 +256,10 @@ function normalise_order_item(array $item): ?array
     return [
         'service_id' => null,
         'service_name' => null,
+        'subcategory_id' => (int) ($item['subcategory_id'] ?? 0) > 0 ? (int) $item['subcategory_id'] : null,
+        'subcategory_name' => trim((string) ($item['subcategory_name'] ?? '')) !== ''
+            ? trim((string) $item['subcategory_name'])
+            : null,
         'service_type' => (string) ($item['service_type'] ?? 'wash_fold'),
         'item_name' => $name,
         'price_mode' => $mode,
@@ -275,13 +292,15 @@ function insert_order_item(int $orderId, array $item): bool
     }
     db_exec(
         'INSERT INTO order_items
-            (order_id, service_id, item_name, service_name, service_type, price_mode, qty,
+            (order_id, service_id, subcategory_id, subcategory_name, item_name, service_name, service_type, price_mode, qty,
              weight_kg, weight_verified, weight_verified_by, weight_verified_at, rate, catalog_rate,
              rate_changed_by, rate_changed_by_name, rate_change_reason, rate_changed_at, amount, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
             $orderId,
             $normalised['service_id'],
+            $normalised['subcategory_id'],
+            $normalised['subcategory_name'],
             $normalised['item_name'],
             $normalised['service_name'],
             $normalised['service_type'],

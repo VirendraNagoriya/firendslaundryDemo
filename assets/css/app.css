@@ -675,6 +675,10 @@ details.fold .fold-body { padding: .9rem; }
 .chip-choice input:checked + span { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-dark); }
 .chip-choice span:hover { border-color: var(--brand); }
 
+/* Subcategory display on item cards */
+.item-field-subcategory { display: grid; gap: .15rem; }
+.item-field-subcategory .rate-readonly { font-weight: 600; }
+
 /* Sticky total bar of the picker */
 .item-picker-bar {
     position: sticky; bottom: 0; z-index: 20;

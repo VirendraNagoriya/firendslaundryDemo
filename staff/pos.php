@@ -133,9 +133,9 @@ layout_start('Add Items (POS)', 'app');
                         <tbody>
                         <?php foreach ($orderItems as $item): ?>
                             <tr>
-                                <td><?= e($item['item_name']) ?></td>
+                                <td><?= e($item['item_name']) ?><?php if (!empty($item['subcategory_name'])): ?><br><span class="subtle"><?= e((string) $item['subcategory_name']) ?></span><?php endif; ?></td>
                                 <td><?= e(order_item_service_label($item)) ?></td>
-                                <td><?= $item['price_mode'] === 'per_kg' ? 'Per kg' : 'Per piece' ?></td>
+                                <td><?= e(order_item_billing_label($item)) ?></td>
                                 <td class="num"><?= e((string) $item['qty']) ?></td>
                                 <td class="num">
                                     <?= e(number_format((float) $item['weight_kg'], 3)) ?> kg

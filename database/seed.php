@@ -59,6 +59,7 @@ $delivery2Id = seed_user('staff', 'Anita Desai', '9000000006', 'anita@laundryfri
 echo "Users ready.\n";
 
 ensure_service_category_schema();
+ensure_subcategory_schema();
 $services = [
     ['Wash & Iron', 'piece', 'per_piece', 15],
     ['Wash & Fold', 'piece', 'per_piece', 10],
@@ -66,6 +67,7 @@ $services = [
     ['Dry Clean', 'piece', 'per_piece', 90],
     ['Shoe Cleaning', 'piece', 'per_piece', 200],
     ['Express & Add-ons', 'extra', 'per_piece', 50],
+    ['Specialty Care (fixed)', 'piece', 'fixed', 250],
 ];
 
 $serviceIds = [];
@@ -79,32 +81,58 @@ foreach ($services as [$serviceName, $category, $mode, $rate]) {
         );
 }
 
+$subcategoryIds = [];
+foreach (active_subcategories() as $subcategory) {
+    $subcategoryIds[(string) $subcategory['name']] = (int) $subcategory['id'];
+}
+
+// Article -> service mapping. The last column is the subcategory that owns the
+// article, so the order screen can filter Subcategory -> Article -> Service.
 $catalog = [
-    ['Shirt', 'Wash & Iron', 'wash_iron', 'per_piece', 15, 0],
-    ['Trouser', 'Wash & Iron', 'wash_iron', 'per_piece', 20, 0],
-    ['Jeans', 'Wash & Iron', 'wash_iron', 'per_piece', 25, 0],
-    ['T-Shirt', 'Wash & Fold', 'wash_fold', 'per_piece', 10, 0],
-    ['Towel Set', 'Wash & Fold', 'wash_fold', 'per_piece', 12, 0],
-    ['Curtain', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 90],
-    ['Bed Cover', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 110],
-    ['Mixed Laundry (kg)', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60],
-    ['Blanket', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 80],
-    ['Dress / Saree', 'Dry Clean', 'dry_clean', 'per_piece', 90, 0],
-    ['Suit / Blazer', 'Dry Clean', 'dry_clean', 'per_piece', 120, 0],
-    ['Sneakers', 'Shoe Cleaning', 'shoe_clean', 'per_piece', 200, 0],
-    ['Express Delivery', 'Express & Add-ons', 'other', 'per_piece', 50, 0],
-    ['Stain Removal', 'Express & Add-ons', 'other', 'per_piece', 30, 0],
-    ['Extra Detergent', 'Express & Add-ons', 'other', 'per_piece', 20, 0],
+    ['Shirt', 'Wash & Iron', 'wash_iron', 'per_piece', 15, 0, 'Men'],
+    ['Trouser', 'Wash & Iron', 'wash_iron', 'per_piece', 20, 0, 'Men'],
+    ['Jeans', 'Wash & Iron', 'wash_iron', 'per_piece', 25, 0, 'Men'],
+    ['Shirt (Formal)', 'Wash & Iron', 'wash_iron', 'per_piece', 25, 0, 'Men'],
+    ['Blazer / Suit Jacket', 'Dry Clean', 'dry_clean', 'per_piece', 120, 0, 'Men'],
+    ['T-Shirt', 'Wash & Fold', 'wash_fold', 'per_piece', 10, 0, 'Men'],
+    ['Towel Set', 'Wash & Fold', 'wash_fold', 'per_piece', 12, 0, 'Household'],
+    ['T-Shirt (kg)', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60, 'Men'],
+    ['Joggers', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60, 'Men'],
+    ['Pyjamas', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60, 'Women'],
+    ['Shorts', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60, 'Men'],
+    ['Socks', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60, 'Men'],
+    ['Underwear', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60, 'Women'],
+    ['Curtain', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 90, 'Household'],
+    ['Bed Cover', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 110, 'Household'],
+    ['Bedsheet', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 70, 'Household'],
+    ['Pillowcase', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 40, 'Household'],
+    ['Mixed Laundry (kg)', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 60, 'Household'],
+    ['Blanket', 'Wash & Fold (kg)', 'wash_fold', 'per_kg', 0, 80, 'Household'],
+    ['Dress / Saree', 'Dry Clean', 'dry_clean', 'per_piece', 90, 0, 'Women'],
+    ['Evening Gown', 'Dry Clean', 'dry_clean', 'per_piece', 150, 0, 'Women'],
+    ['Silk Blouse', 'Dry Clean', 'dry_clean', 'per_piece', 80, 0, 'Women'],
+    ['School Uniform', 'Wash & Iron', 'wash_iron', 'per_piece', 18, 0, 'Kids'],
+    ['School Blazer', 'Dry Clean', 'dry_clean', 'per_piece', 100, 0, 'Kids'],
+    ['Sneakers', 'Shoe Cleaning', 'shoe_clean', 'per_piece', 200, 0, 'Accessories'],
+    ['Helmet', 'Specialty Care (fixed)', 'other', 'fixed', 250, 0, 'Accessories'],
+    ['Leather Shoes', 'Specialty Care (fixed)', 'other', 'fixed', 300, 0, 'Accessories'],
+    ['Heavy Curtains', 'Specialty Care (fixed)', 'other', 'fixed', 400, 0, 'Household'],
+    ['Area Rug', 'Specialty Care (fixed)', 'other', 'fixed', 500, 0, 'Household'],
+    ['Express Delivery', 'Express & Add-ons', 'other', 'fixed', 50, 0, 'Accessories'],
+    ['Stain Removal', 'Express & Add-ons', 'other', 'fixed', 30, 0, 'Accessories'],
+    ['Extra Detergent', 'Express & Add-ons', 'other', 'fixed', 20, 0, 'Accessories'],
 ];
 
-foreach ($catalog as [$name, $serviceName, $serviceType, $mode, $perPiece, $perKg]) {
+foreach ($catalog as [$name, $serviceName, $serviceType, $mode, $perPiece, $perKg, $subcategory]) {
     $serviceId = $serviceIds[$serviceName];
+    $subcategoryId = $subcategoryIds[$subcategory] ?? null;
     db_exec(
-        'INSERT INTO laundry_items (service_id, item_name, service_type, price_mode, rate_per_piece, rate_per_kg, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, 1)
-         ON DUPLICATE KEY UPDATE service_type = VALUES(service_type), price_mode = VALUES(price_mode),
-         rate_per_piece = VALUES(rate_per_piece), rate_per_kg = VALUES(rate_per_kg), is_active = 1',
-        [$serviceId, $name, $serviceType, $mode, $perPiece, $perKg]
+        'INSERT INTO laundry_items (service_id, subcategory_id, item_name, service_type, price_mode, rate_per_piece, rate_per_kg, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+         ON DUPLICATE KEY UPDATE subcategory_id = VALUES(subcategory_id), service_type = VALUES(service_type),
+         price_mode = VALUES(price_mode), rate_per_piece = VALUES(rate_per_piece),
+         rate_per_kg = VALUES(rate_per_kg), is_active = 1',
+        [$serviceId, $subcategoryId, $name, $serviceType, $mode, $perPiece, $perKg]
     );
 }
 echo "Catalog ready.\n";

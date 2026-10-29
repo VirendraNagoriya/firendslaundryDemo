@@ -72,6 +72,53 @@ if (!table_column($pdo, 'services', 'category')) {
     echo "services.category added.\n";
 }
 $pdo->exec("UPDATE services SET category = 'kg' WHERE price_mode = 'per_kg' AND category <> 'kg'");
+
+/* ------------------------------------------------------------------
+ * Subcategory -> Article -> Service -> Pricing metric hierarchy
+ * ------------------------------------------------------------------ */
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS subcategories (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(80) NOT NULL,
+        slug VARCHAR(80) NOT NULL,
+        sort_order INT NOT NULL DEFAULT 0,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_subcategories_slug (slug),
+        KEY idx_subcategories_active (is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+);
+foreach ([
+    ['laundry_items', 'subcategory_id', 'INT UNSIGNED NULL AFTER service_id'],
+    ['order_items', 'subcategory_id', 'INT UNSIGNED NULL AFTER service_id'],
+    ['order_items', 'subcategory_name', 'VARCHAR(80) NULL AFTER subcategory_id'],
+] as [$table, $column, $definition]) {
+    if (!table_column($pdo, $table, $column)) {
+        $pdo->exec('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition);
+        echo "{$table}.{$column} added.\n";
+    }
+}
+foreach (['services', 'laundry_items', 'order_items'] as $table) {
+    $column = $pdo->query("SHOW COLUMNS FROM `{$table}` LIKE 'price_mode'")->fetch(PDO::FETCH_ASSOC);
+    $type = is_array($column) ? (string) $column['Type'] : '';
+    if ($type !== '' && strpos($type, "'fixed'") === false) {
+        $pdo->exec(
+            "ALTER TABLE `{$table}` MODIFY price_mode
+             ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece'"
+        );
+        echo "{$table}.price_mode extended with fixed.\n";
+    }
+}
+$subcategorySort = 0;
+$subcategoryInsert = $pdo->prepare(
+    'INSERT INTO subcategories (name, slug, sort_order, is_active) VALUES (?, ?, ?, 1)
+     ON DUPLICATE KEY UPDATE name = VALUES(name)'
+);
+foreach (['Men', 'Women', 'Kids', 'Household', 'Accessories'] as $subcategoryName) {
+    $subcategorySort += 10;
+    $subcategoryInsert->execute([$subcategoryName, subcategory_slug($subcategoryName), $subcategorySort]);
+}
 if (!table_column($pdo, 'orders', 'delivery_assigned_at')) {
     $pdo->exec('ALTER TABLE orders ADD COLUMN delivery_assigned_at DATETIME NULL AFTER pickup_assigned_at');
     echo "orders.delivery_assigned_at added.\n";

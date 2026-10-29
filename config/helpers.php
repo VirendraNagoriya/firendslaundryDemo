@@ -160,7 +160,29 @@ function service_modes(): array
     return [
         'per_piece' => 'Per piece',
         'per_kg' => 'Per kg',
+        'fixed' => 'Fixed rate',
     ];
+}
+
+/**
+ * The three pricing metrics requested for the catalogue hierarchy.
+ */
+function pricing_metrics(): array
+{
+    return [
+        'per_kg' => 'Per kg',
+        'per_piece' => 'Per piece',
+        'fixed' => 'Fixed rate',
+    ];
+}
+
+/**
+ * True when the mode is billed as quantity x rate (piece and fixed extras).
+ * Only per_kg is billed from the scale weight.
+ */
+function mode_is_piece_billed(string $mode): bool
+{
+    return $mode !== 'per_kg';
 }
 
 /**
@@ -196,10 +218,14 @@ function service_category_for(array $service): string
 
 /**
  * Billing mode for a category. Extras are billed like pieces (qty x rate).
+ * Piece and extra tabs may additionally be marked as a fixed rate metric.
  */
-function service_mode_for_category(string $category): string
+function service_mode_for_category(string $category, string $metric = ''): string
 {
-    return $category === 'kg' ? 'per_kg' : 'per_piece';
+    if ($category === 'kg') {
+        return 'per_kg';
+    }
+    return $metric === 'fixed' ? 'fixed' : 'per_piece';
 }
 
 /**
@@ -236,6 +262,129 @@ function service_mode_label(string $mode): string
 {
     $all = service_modes();
     return $all[$mode] ?? ucfirst(str_replace('_', ' ', $mode));
+}
+
+/* ------------------------------------------------------------------
+ * Subcategories (Men, Women, Kids, Household, Accessories)
+ *
+ * Hierarchy used by the order screen:
+ *   Subcategory -> Article (laundry_items) -> Service -> Pricing metric
+ * ------------------------------------------------------------------ */
+
+function default_subcategories(): array
+{
+    return ['Men', 'Women', 'Kids', 'Household', 'Accessories'];
+}
+
+function subcategory_slug(string $name): string
+{
+    $slug = mb_strtolower(trim($name));
+    $slug = preg_replace('/[^a-z0-9]+/u', '-', $slug) ?? '';
+    $slug = trim($slug, '-');
+    return $slug !== '' ? $slug : 'subcategory';
+}
+
+/**
+ * Create the subcategory table/columns and seed the starter list on older
+ * databases. Extend price_mode enums with the fixed pricing metric at the
+ * same time so fixed-rate articles work without a manual migration.
+ */
+function ensure_subcategory_schema(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        db_exec(
+            "CREATE TABLE IF NOT EXISTS subcategories (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(80) NOT NULL,
+                slug VARCHAR(80) NOT NULL,
+                sort_order INT NOT NULL DEFAULT 0,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_subcategories_slug (slug),
+                KEY idx_subcategories_active (is_active)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+
+        $columns = [
+            ['laundry_items', 'subcategory_id', 'INT UNSIGNED NULL AFTER service_id'],
+            ['order_items', 'subcategory_id', 'INT UNSIGNED NULL AFTER service_id'],
+            ['order_items', 'subcategory_name', 'VARCHAR(80) NULL AFTER subcategory_id'],
+        ];
+        foreach ($columns as [$table, $column, $definition]) {
+            $exists = (int) db_value(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                [$table, $column],
+                0
+            );
+            if ($exists === 0) {
+                db_exec('ALTER TABLE `' . $table . '` ADD COLUMN `' . $column . '` ' . $definition);
+            }
+        }
+
+        // Widen price_mode to include the fixed pricing metric.
+        foreach (['services', 'laundry_items', 'order_items'] as $table) {
+            $row = db_row(
+                "SELECT COLUMN_TYPE AS type FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'price_mode'",
+                [$table]
+            );
+            $type = (string) ($row['type'] ?? '');
+            if ($type !== '' && strpos($type, "'fixed'") === false) {
+                db_exec(
+                    "ALTER TABLE `" . $table . "` MODIFY price_mode
+                     ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece'"
+                );
+            }
+        }
+
+        // Seed the starter subcategories once.
+        $sort = 0;
+        foreach (default_subcategories() as $name) {
+            $sort += 10;
+            $slug = subcategory_slug($name);
+            db_exec(
+                'INSERT INTO subcategories (name, slug, sort_order, is_active)
+                 VALUES (?, ?, ?, 1)
+                 ON DUPLICATE KEY UPDATE name = VALUES(name)',
+                [$name, $slug, $sort]
+            );
+        }
+        audit('schema.subcategories', 'schema', 'subcategories', 'Subcategory hierarchy ready');
+    } catch (Throwable $e) {
+        app_log_throwable($e);
+    }
+}
+
+function all_subcategories(): array
+{
+    ensure_subcategory_schema();
+    return db_all('SELECT * FROM subcategories ORDER BY sort_order, name');
+}
+
+function active_subcategories(): array
+{
+    ensure_subcategory_schema();
+    return db_all('SELECT * FROM subcategories WHERE is_active = 1 ORDER BY sort_order, name');
+}
+
+/**
+ * Resolve a posted subcategory id to a live row, or null when it is unknown.
+ */
+function subcategory_by_id(int $id): ?array
+{
+    if ($id <= 0) {
+        return null;
+    }
+    ensure_subcategory_schema();
+    return db_row('SELECT * FROM subcategories WHERE id = ?', [$id]);
 }
 
 /**
@@ -304,6 +453,12 @@ function order_item_service_label(array $item): string
         return $name;
     }
     return service_type_label((string) ($item['service_type'] ?? ''));
+}
+
+function order_item_billing_label(array $item): string
+{
+    $mode = (string) ($item['price_mode'] ?? 'per_piece');
+    return service_mode_label($mode);
 }
 
 function payment_methods(): array

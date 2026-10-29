@@ -44,10 +44,22 @@ CREATE TABLE IF NOT EXISTS customers (
   KEY idx_customers_phone (phone)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS subcategories (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  slug VARCHAR(80) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_subcategories_slug (slug),
+  KEY idx_subcategories_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS services (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   service_name VARCHAR(120) NOT NULL,
-  price_mode ENUM('per_piece','per_kg') NOT NULL DEFAULT 'per_piece',
+  price_mode ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece',
   category ENUM('piece','kg','extra') NOT NULL DEFAULT 'piece',
   rate DECIMAL(12,2) NOT NULL DEFAULT 0,
   min_weight_kg DECIMAL(10,3) NOT NULL DEFAULT 0,
@@ -61,9 +73,10 @@ CREATE TABLE IF NOT EXISTS services (
 CREATE TABLE IF NOT EXISTS laundry_items (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   service_id INT UNSIGNED NULL,
+  subcategory_id INT UNSIGNED NULL,
   item_name VARCHAR(120) NOT NULL,
   service_type VARCHAR(40) NOT NULL DEFAULT 'wash_fold',
-  price_mode ENUM('per_piece','per_kg') NOT NULL DEFAULT 'per_piece',
+  price_mode ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece',
   rate_per_piece DECIMAL(12,2) NOT NULL DEFAULT 0,
   rate_per_kg DECIMAL(12,2) NOT NULL DEFAULT 0,
   min_weight_kg DECIMAL(10,3) NOT NULL DEFAULT 0,
@@ -71,7 +84,8 @@ CREATE TABLE IF NOT EXISTS laundry_items (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_laundry_item_service (service_id, item_name),
-  KEY idx_laundry_items_service (service_id)
+  KEY idx_laundry_items_service (service_id),
+  KEY idx_laundry_items_subcategory (subcategory_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -121,10 +135,12 @@ CREATE TABLE IF NOT EXISTS order_items (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   order_id INT UNSIGNED NOT NULL,
   service_id INT UNSIGNED NULL,
+  subcategory_id INT UNSIGNED NULL,
+  subcategory_name VARCHAR(80) NULL,
   item_name VARCHAR(120) NOT NULL,
   service_name VARCHAR(120) NULL,
   service_type VARCHAR(40) NOT NULL DEFAULT 'wash_fold',
-  price_mode ENUM('per_piece','per_kg') NOT NULL DEFAULT 'per_piece',
+  price_mode ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece',
   qty INT UNSIGNED NOT NULL DEFAULT 1,
   weight_kg DECIMAL(10,3) NOT NULL DEFAULT 0,
   weight_verified TINYINT(1) NOT NULL DEFAULT 0,

@@ -73,9 +73,12 @@
     }
 
     function rowInfo(row) {
-        var mode = row.getAttribute('data-service-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
+        var mode = row.getAttribute('data-service-mode');
+        mode = mode === 'per_kg' ? 'per_kg' : (mode === 'fixed' ? 'fixed' : 'per_piece');
         var modeInput = row.querySelector('[data-mode-value]');
-        if (modeInput && modeInput.value === 'per_kg') { mode = 'per_kg'; }
+        if (modeInput && (modeInput.value === 'per_kg' || modeInput.value === 'fixed')) {
+            mode = modeInput.value;
+        }
         return {
             qty: fieldValue(row, '[name="item_qty[]"], [name^="item_qty"]'),
             kg: fieldValue(row, '[name="item_weight[]"], [name^="item_weight"]'),
@@ -87,7 +90,7 @@
     function serviceLabel(row) {
         var select = row.querySelector('select[name^="item_service_id"]');
         if (!select || select.selectedIndex < 0) { return ''; }
-        return select.options[select.selectedIndex].text.replace(/\s*\((per kg|per piece)\)$/, '');
+        return select.options[select.selectedIndex].text.replace(/\s*\((per kg|per piece|fixed[^)]*)\)$/, '');
     }
 
     function currencyOf(scope) {
@@ -106,7 +109,7 @@
             parts.push('Per kg');
             parts.push(info.kg + ' kg x ' + currency + info.rate.toFixed(2));
         } else {
-            parts.push('Per piece');
+            parts.push(info.mode === 'fixed' ? 'Fixed rate' : 'Per piece');
             parts.push(info.qty + ' x ' + currency + info.rate.toFixed(2));
         }
         parts.push('= ' + currency + amount.toFixed(2));
@@ -201,7 +204,31 @@
         }
 
         function chipMode(chip) {
-            return chip && chip.getAttribute('data-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
+            var mode = chip ? chip.getAttribute('data-mode') : '';
+            return mode === 'per_kg' ? 'per_kg' : (mode === 'fixed' ? 'fixed' : 'per_piece');
+        }
+
+        function selectedSubcategory() {
+            var chip = sheet ? sheet.querySelector('input[name="sheet_subcategory_id"]:checked') : null;
+            if (!chip || String(chip.value) === '0') { return { id: '0', name: '' }; }
+            var label = chip.parentNode ? chip.parentNode.querySelector('span') : null;
+            return { id: String(chip.value), name: label ? label.textContent.trim() : '' };
+        }
+
+        function selectedSubcategoryId() {
+            return selectedSubcategory().id;
+        }
+
+        function cardSubcategoryId(select, name) {
+            var entry = catalogEntry(select ? select.value : '', name);
+            return entry && entry.subcategory_id ? String(entry.subcategory_id) : '0';
+        }
+
+        function setCardSubcategory(card, id, label) {
+            var input = card.querySelector('[data-subcategory-input]');
+            if (input) { input.value = String(id || 0); }
+            var text = card.querySelector('[data-subcategory-label]');
+            if (text) { text.textContent = label || '—'; }
         }
 
         function catalogEntry(serviceId, name) {
@@ -276,13 +303,18 @@
             var chip = selectedServiceChip();
             var mode = chipMode(chip);
             var qtyField = sheet.querySelector('[data-sheet-qty]');
+            var qtyLabel = sheet.querySelector('[data-sheet-qty-label]');
             var weightField = sheet.querySelector('[data-sheet-weight]');
             var custom = sheet.querySelector('[data-custom-name]');
             var kgNote = sheet.querySelector('[data-kg-note]');
             var rateInput = sheetRateInput();
             var serviceId = chip ? chip.value : '';
+            var subcategoryId = selectedSubcategoryId();
 
-            if (qtyField) { qtyField.hidden = mode === 'per_kg'; }
+            // Pieces are always counted. For kg lines they are inventory only and
+            // the bill comes from the verified scale weight.
+            if (qtyField) { qtyField.hidden = false; }
+            if (qtyLabel) { qtyLabel.textContent = mode === 'per_kg' ? 'Pieces (tracking)' : 'How many'; }
             if (weightField) { weightField.hidden = mode !== 'per_kg'; }
             if (custom) { custom.hidden = mode === 'per_kg'; }
             if (kgNote) { kgNote.hidden = mode !== 'per_kg'; }
@@ -298,7 +330,8 @@
 
             var visible = 0;
             picker.querySelectorAll('[data-quick-item]').forEach(function (button) {
-                var match = String(button.getAttribute('data-service-id')) === String(serviceId);
+                var match = String(button.getAttribute('data-service-id')) === String(serviceId)
+                    && (subcategoryId === '0' || String(button.getAttribute('data-subcategory-id')) === subcategoryId);
                 button.hidden = !match;
                 if (match) { visible++; }
             });
@@ -392,6 +425,7 @@
         }
 
         function applyService(card, mode, rate, setRate) {
+            mode = mode === 'per_kg' ? 'per_kg' : (mode === 'fixed' ? 'fixed' : 'per_piece');
             var modeValue = card.querySelector('[data-mode-value]');
             if (modeValue) { modeValue.value = mode; }
             var serviceType = card.querySelector('[data-service-type]');
@@ -404,8 +438,10 @@
                 card.setAttribute('data-service-category', selectedOption.getAttribute('data-category') || (mode === 'per_kg' ? 'kg' : 'piece'));
             }
             var qtyField = card.querySelector('[data-field-qty]');
+            var qtyLabel = card.querySelector('[data-qty-label]');
             var weightField = card.querySelector('[data-field-weight]');
-            if (qtyField) { qtyField.hidden = mode === 'per_kg'; }
+            if (qtyField) { qtyField.hidden = false; }
+            if (qtyLabel) { qtyLabel.textContent = mode === 'per_kg' ? 'Pieces (tracking)' : 'How many'; }
             if (weightField) { weightField.hidden = mode !== 'per_kg'; }
             card.setAttribute('data-service-mode', mode);
             if (setRate) {
@@ -414,6 +450,13 @@
                 if (rateInput && !rateIsManual(rateInput)) {
                     rateInput.value = rate;
                 }
+            }
+            var nameInput = card.querySelector('[name="item_name[]"]');
+            var entry = catalogEntry(select ? select.value : '', nameInput ? nameInput.value : '');
+            if (entry) {
+                setCardSubcategory(card, entry.subcategory_id || 0, entry.subcategory || '');
+            } else if (setRate) {
+                setCardSubcategory(card, 0, '');
             }
             syncServiceDatalist(card, mode);
             warnIfKgNameMismatch(card);
@@ -425,7 +468,7 @@
             if (nameInput) { nameInput.value = data.name || ''; }
             var serviceSelect = card.querySelector('[data-service-select]');
             if (serviceSelect && data.service_id) { serviceSelect.value = String(data.service_id); }
-            var mode = data.mode === 'per_kg' ? 'per_kg' : 'per_piece';
+            var mode = data.mode === 'per_kg' ? 'per_kg' : (data.mode === 'fixed' ? 'fixed' : 'per_piece');
             var qty = card.querySelector('[name="item_qty[]"]');
             if (qty) { qty.value = data.qty === undefined ? 1 : data.qty; }
             var weight = card.querySelector('[name="item_weight[]"]');
@@ -438,12 +481,15 @@
             var reason = card.querySelector('[data-rate-reason]');
             if (reason) { reason.value = data.reason || ''; }
             applyService(card, mode, catalogRate, false);
+            if (data.subcategory_id && String(data.subcategory_id) !== '0') {
+                setCardSubcategory(card, data.subcategory_id, data.subcategory || '');
+            }
             updateCardRateUI(card);
         }
 
         function findMatchingCard(data) {
             if (!list) { return null; }
-            var mode = data.mode === 'per_kg' ? 'per_kg' : 'per_piece';
+            var mode = data.mode === 'per_kg' ? 'per_kg' : (data.mode === 'fixed' ? 'fixed' : 'per_piece');
             var rate = num(data.rate);
             var cards = list.querySelectorAll('[data-item-row]');
             for (var i = 0; i < cards.length; i++) {
@@ -451,11 +497,13 @@
                 var select = card.querySelector('[data-service-select]');
                 var nameInput = card.querySelector('[name="item_name[]"]');
                 var rateInput = card.querySelector('[data-rate-input]');
+                var subcategoryInput = card.querySelector('[data-subcategory-input]');
                 var sameService = String(select ? select.value : '') === String(data.service_id);
                 var sameName = String(nameInput ? nameInput.value.trim().toLowerCase() : '') === String(data.name || '').trim().toLowerCase();
                 var sameMode = card.getAttribute('data-service-mode') === mode;
                 var sameRate = Math.abs(num(rateInput ? rateInput.value : 0) - rate) < 0.005;
-                if (sameService && sameName && sameMode && sameRate) { return card; }
+                var sameSubcategory = String(subcategoryInput ? subcategoryInput.value : '0') === String(data.subcategory_id || '0');
+                if (sameService && sameName && sameMode && sameRate && sameSubcategory) { return card; }
             }
             return null;
         }
@@ -503,6 +551,8 @@
 
             var nameInput = sheet.querySelector('[data-sheet-name]');
             if (nameInput) { nameInput.value = ''; }
+            var allSubcategory = sheet.querySelector('input[name="sheet_subcategory_id"][value="0"]');
+            if (allSubcategory) { allSubcategory.checked = true; }
             var rateInput = sheetRateInput();
             if (rateInput) {
                 rateInput.removeAttribute('data-rate-manual');
@@ -556,10 +606,10 @@
             var hint = sheet.querySelector('[data-sheet-name-hint]');
             if (hint) {
                 hint.textContent = wanted === 'kg'
-                    ? 'Choose one of this kg service\'s catalog items, then enter the estimated weight.'
+                    ? 'Choose a subcategory and article, then enter the estimated weight.'
                     : (wanted === 'extra'
                         ? 'Add an add-on such as express delivery, stain removal or extra detergent.'
-                        : 'Pick a service, then type or choose the item.');
+                        : 'Pick a subcategory, then the article. Its service and rate follow automatically.');
             }
             var nameField = sheet.querySelector('[data-sheet-name]');
             if (nameField) {
@@ -631,6 +681,9 @@
                 if (nameInput) { nameInput.focus(); }
                 return;
             }
+            if (!entry) {
+                entry = catalogEntry(serviceId, name);
+            }
 
             var rate = num(rateInput ? rateInput.value : 0);
             var catalogRate = rateInput ? num(rateInput.getAttribute('data-catalog-rate')) : 0;
@@ -646,10 +699,13 @@
 
             var weight = mode === 'per_kg' ? num(weightInput ? weightInput.value : 0) : 0;
             var qty = Math.max(1, Math.floor(num(qtyInput ? qtyInput.value : 1)) || 1);
+            var subcategory = selectedSubcategory();
 
             var card = addCard({
                 name: name,
                 service_id: serviceId,
+                subcategory_id: entry ? entry.subcategory_id : subcategory.id,
+                subcategory: entry ? entry.subcategory : subcategory.name,
                 mode: mode,
                 qty: qty,
                 weight: weight || 1,
@@ -698,6 +754,10 @@
                 }
             }
             if (!found) { updateSheetMinWeight(); return; }
+            if (found.subcategory_id && selectedSubcategoryId() === '0') {
+                var foundSubcategory = sheet.querySelector('input[name="sheet_subcategory_id"][value="' + found.subcategory_id + '"]');
+                if (foundSubcategory) { foundSubcategory.checked = true; }
+            }
             var rate = sheetRateInput();
             if (rate) {
                 rate.setAttribute('data-catalog-rate', String(found.rate));
@@ -723,6 +783,10 @@
                 if (!pick) { return; }
 
                 activateSheetTab(pick.category || (pick.mode === 'per_kg' ? 'kg' : 'piece'));
+                if (pick.subcategory_id) {
+                    var pickSubcategory = sheet.querySelector('input[name="sheet_subcategory_id"][value="' + pick.subcategory_id + '"]');
+                    if (pickSubcategory) { pickSubcategory.checked = true; }
+                }
 
                 if (pick.mode === 'per_kg') {
                     // Weighing needs a deliberate weight, so pre-fill the sheet
@@ -755,6 +819,8 @@
                 var card = addCard({
                     name: pick.name,
                     service_id: pick.service_id,
+                    subcategory_id: pick.subcategory_id || 0,
+                    subcategory: pick.subcategory || '',
                     mode: pick.mode,
                     qty: 1,
                     weight: 0,
@@ -849,7 +915,8 @@
                 var row = target.closest('[data-item-row]');
                 if (row) {
                     var option = target.options[target.selectedIndex];
-                    var mode = option && option.getAttribute('data-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
+                    var rawMode = option ? option.getAttribute('data-mode') : '';
+                    var mode = rawMode === 'per_kg' ? 'per_kg' : (rawMode === 'fixed' ? 'fixed' : 'per_piece');
                     var rate = option ? num(option.getAttribute('data-rate')) : 0;
                     // Keep the typed item name. Only the billing mode and the
                     // default rate follow the service, and a manual rate wins.
@@ -859,6 +926,10 @@
                 return;
             }
             if (target.matches('input[name="sheet_service_id"]')) {
+                syncSheetService();
+                return;
+            }
+            if (target.matches('input[name="sheet_subcategory_id"]')) {
                 syncSheetService();
                 return;
             }
@@ -874,7 +945,8 @@
 
         // Existing rows: restore the correct qty/weight fields and kg item list.
         picker.querySelectorAll('[data-item-row]').forEach(function (row) {
-            var mode = row.getAttribute('data-service-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
+            var rawMode = row.getAttribute('data-service-mode');
+            var mode = rawMode === 'per_kg' ? 'per_kg' : (rawMode === 'fixed' ? 'fixed' : 'per_piece');
             applyService(row, mode, 0, false);
         });
 
@@ -899,10 +971,16 @@
                 var rate = row.querySelector('[data-rate-input]');
                 var reason = row.querySelector('[data-rate-reason]');
                 var notes = row.querySelector('[name="item_notes[]"]');
+                var subcategory = row.querySelector('[data-subcategory-input]');
+                var subcategoryLabel = row.querySelector('[data-subcategory-label]');
                 entries.push({
                     name: name,
                     service_id: select ? select.value : '',
-                    mode: row.getAttribute('data-service-mode') === 'per_kg' ? 'per_kg' : 'per_piece',
+                    subcategory_id: subcategory ? subcategory.value : 0,
+                    subcategory: subcategoryLabel ? subcategoryLabel.textContent.trim() : '',
+                    mode: row.getAttribute('data-service-mode') === 'per_kg'
+                        ? 'per_kg'
+                        : (row.getAttribute('data-service-mode') === 'fixed' ? 'fixed' : 'per_piece'),
                     qty: qty ? qty.value : 1,
                     weight: weight ? weight.value : 0,
                     rate: rate ? rate.value : 0,
@@ -972,6 +1050,8 @@
                 var card = addCard({
                     name: entry.name,
                     service_id: entry.service_id,
+                    subcategory_id: entry.subcategory_id,
+                    subcategory: entry.subcategory,
                     mode: entry.mode,
                     qty: entry.qty,
                     weight: entry.weight,

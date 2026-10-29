@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/includes/layout.php';
 
 $user = require_admin();
 ensure_service_category_schema();
+ensure_subcategory_schema();
 $errors = [];
 $categories = service_categories();
 $tab = query('tab', 'piece');
@@ -28,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!isset($categories[$category])) {
             $category = $tab;
         }
-        $mode = service_mode_for_category($category);
+        $mode = service_mode_for_category($category, post('price_metric'));
         $rate = (float) post('rate');
         $minWeight = $category === 'kg' ? (float) post('min_weight_kg') : 0.0;
         $active = post('is_active') === '1' ? 1 : 0;
@@ -76,10 +77,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('admin/catalog.php?tab=' . urlencode(service_category_for($serviceRow ?? [])));
     }
 
+    if ($action === 'save_subcategory') {
+        $subcategoryId = (int) post('subcategory_id');
+        $name = post('subcategory_name');
+        $sort = (int) post('sort_order');
+        $active = post('is_active') === '1' ? 1 : 0;
+
+        if ($name === '') {
+            $errors[] = 'Please enter the subcategory name.';
+        }
+        $slug = subcategory_slug($name);
+        $duplicate = db_row(
+            'SELECT id FROM subcategories WHERE slug = ? AND id <> ?',
+            [$slug, $subcategoryId]
+        );
+        if ($duplicate !== null) {
+            $errors[] = 'A subcategory with this name already exists.';
+        }
+
+        if ($errors === []) {
+            if ($subcategoryId > 0) {
+                db_exec(
+                    'UPDATE subcategories SET name = ?, slug = ?, sort_order = ?, is_active = ? WHERE id = ?',
+                    [$name, $slug, $sort, $active, $subcategoryId]
+                );
+                audit('subcategory.update', 'subcategory', (string) $subcategoryId, $name);
+                flash('success', 'Subcategory updated.');
+            } else {
+                $newId = db_insert(
+                    'INSERT INTO subcategories (name, slug, sort_order, is_active) VALUES (?, ?, ?, ?)',
+                    [$name, $slug, $sort, $active]
+                );
+                audit('subcategory.create', 'subcategory', (string) $newId, $name);
+                flash('success', 'Subcategory created.');
+            }
+            redirect('admin/catalog.php?tab=' . urlencode($tab));
+        }
+    }
+
+    if ($action === 'toggle_subcategory') {
+        $subcategoryId = (int) post('subcategory_id');
+        db_exec('UPDATE subcategories SET is_active = 1 - is_active WHERE id = ?', [$subcategoryId]);
+        audit('subcategory.toggle', 'subcategory', (string) $subcategoryId);
+        flash('success', 'Subcategory status updated.');
+        redirect('admin/catalog.php?tab=' . urlencode($tab));
+    }
+
     if ($action === 'save_item') {
         $itemId = (int) post('item_id');
         $name = post('item_name');
         $serviceId = (int) post('service_id');
+        $subcategoryId = (int) post('subcategory_id');
         $override = (float) post('rate_override');
         $active = post('is_active') === '1' ? 1 : 0;
         $service = $serviceId > 0 ? db_row('SELECT * FROM services WHERE id = ?', [$serviceId]) : null;
@@ -108,24 +156,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($errors === []) {
-            $mode = (string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
-            $perPiece = $mode === 'per_piece' ? $override : 0;
+            $mode = in_array((string) $service['price_mode'], ['per_kg', 'fixed'], true)
+                ? (string) $service['price_mode']
+                : 'per_piece';
+            $perPiece = $mode === 'per_kg' ? 0 : $override;
             $perKg = $mode === 'per_kg' ? $override : 0;
             $serviceType = service_type_for_name((string) $service['service_name']);
+            $subcategoryValue = $subcategoryId > 0 && subcategory_by_id($subcategoryId) !== null ? $subcategoryId : null;
 
             if ($itemId > 0) {
                 db_exec(
-                    'UPDATE laundry_items SET service_id = ?, item_name = ?, service_type = ?, price_mode = ?,
+                    'UPDATE laundry_items SET service_id = ?, subcategory_id = ?, item_name = ?, service_type = ?, price_mode = ?,
                      rate_per_piece = ?, rate_per_kg = ?, is_active = ? WHERE id = ?',
-                    [$serviceId, $name, $serviceType, $mode, $perPiece, $perKg, $active, $itemId]
+                    [$serviceId, $subcategoryValue, $name, $serviceType, $mode, $perPiece, $perKg, $active, $itemId]
                 );
                 audit('catalog.update', 'laundry_item', (string) $itemId, $name);
                 flash('success', 'Item updated.');
             } else {
                 $newId = db_insert(
-                    'INSERT INTO laundry_items (service_id, item_name, service_type, price_mode, rate_per_piece, rate_per_kg, is_active)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [$serviceId, $name, $serviceType, $mode, $perPiece, $perKg, $active]
+                    'INSERT INTO laundry_items (service_id, subcategory_id, item_name, service_type, price_mode, rate_per_piece, rate_per_kg, is_active)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [$serviceId, $subcategoryValue, $name, $serviceType, $mode, $perPiece, $perKg, $active]
                 );
                 audit('catalog.create', 'laundry_item', (string) $newId, $name);
                 flash('success', 'Item added to the service.');
@@ -148,12 +199,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $services = all_services();
+$subcategories = all_subcategories();
 $items = db_all(
     'SELECT i.*, s.service_name, s.price_mode AS service_price_mode, s.rate AS service_rate,
-            s.category AS service_category
+            s.category AS service_category, sc.name AS subcategory_name
      FROM laundry_items i
      LEFT JOIN services s ON s.id = i.service_id
-     ORDER BY FIELD(s.category, \'piece\', \'kg\', \'extra\'), s.service_name, i.is_active DESC, i.item_name'
+     LEFT JOIN subcategories sc ON sc.id = i.subcategory_id
+     ORDER BY FIELD(s.category, \'piece\', \'kg\', \'extra\'), s.service_name, sc.sort_order, i.is_active DESC, i.item_name'
 );
 
 $servicesByCategory = [];
@@ -181,6 +234,10 @@ if (query_int('edit') > 0) {
             : null;
         $tab = service_category_for($itemService ?? $editItem);
     }
+}
+$editSubcategory = null;
+if (query_int('edit_subcategory') > 0) {
+    $editSubcategory = db_row('SELECT * FROM subcategories WHERE id = ?', [query_int('edit_subcategory')]);
 }
 
 $tabLabel = service_category_label($tab);
@@ -210,6 +267,84 @@ layout_start('Services & Items', 'app');
 
 <div class="panel">
     <div class="panel-head">
+        <h2><?= $editSubcategory !== null ? 'Edit Subcategory' : 'Add Subcategory' ?></h2>
+        <?php if ($editSubcategory !== null): ?>
+            <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?tab=' . urlencode($tab))) ?>">Cancel edit</a>
+        <?php endif; ?>
+    </div>
+    <div class="panel-body">
+        <form method="post" action="<?= e(url('admin/catalog.php')) ?>">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="save_subcategory">
+            <input type="hidden" name="tab" value="<?= e($tab) ?>">
+            <input type="hidden" name="subcategory_id" value="<?= e((string) ($editSubcategory['id'] ?? 0)) ?>">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="subcategory_name" class="required">Subcategory</label>
+                    <input type="text" id="subcategory_name" name="subcategory_name" value="<?= e((string) ($editSubcategory['name'] ?? '')) ?>" placeholder="e.g. Men, Women, Kids, Household, Accessories" required>
+                    <p class="subtle">Groups articles on the order screen. Keep it broad, e.g. Men or Household.</p>
+                </div>
+                <div class="form-group">
+                    <label for="sort_order">Display order</label>
+                    <input type="number" id="sort_order" name="sort_order" step="1" value="<?= e((string) ($editSubcategory['sort_order'] ?? 0)) ?>">
+                    <p class="subtle">Lower numbers appear first.</p>
+                </div>
+                <div class="form-group">
+                    <label for="subcategory_active">Status</label>
+                    <select name="is_active" id="subcategory_active">
+                        <option value="1"<?= (int) ($editSubcategory['is_active'] ?? 1) === 1 ? ' selected' : '' ?>>Active</option>
+                        <option value="0"<?= $editSubcategory !== null && (int) $editSubcategory['is_active'] === 0 ? ' selected' : '' ?>>Inactive</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button class="btn" type="submit"><?= $editSubcategory !== null ? 'Update Subcategory' : 'Add Subcategory' ?></button>
+            </div>
+        </form>
+    </div>
+    <div class="panel-body tight">
+        <?php if ($subcategories === []): ?>
+            <div class="empty-state"><strong>No subcategories yet</strong>Add Men, Women, Kids, Household and Accessories to start.</div>
+        <?php else: ?>
+            <div class="table-wrap">
+                <table class="data">
+                    <thead>
+                        <tr><th>Subcategory</th><th>Articles</th><th>Status</th><th class="actions">Actions</th></tr>
+                    </thead>
+                    <tbody>
+                    <?php
+                    $subcategoryCounts = [];
+                    foreach ($items as $itemRow) {
+                        $sid = (int) ($itemRow['subcategory_id'] ?? 0);
+                        $subcategoryCounts[$sid] = ($subcategoryCounts[$sid] ?? 0) + 1;
+                    }
+                    ?>
+                    <?php foreach ($subcategories as $subcategory): ?>
+                        <tr>
+                            <td><strong><?= e((string) $subcategory['name']) ?></strong></td>
+                            <td><?= e((string) ($subcategoryCounts[(int) $subcategory['id']] ?? 0)) ?></td>
+                            <td><span class="badge <?= (int) $subcategory['is_active'] === 1 ? 'badge-success' : 'badge-muted' ?>"><?= (int) $subcategory['is_active'] === 1 ? 'Active' : 'Inactive' ?></span></td>
+                            <td class="actions">
+                                <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?tab=' . urlencode($tab) . '&edit_subcategory=' . (int) $subcategory['id'])) ?>">Edit</a>
+                                <form method="post" style="display:inline;">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="toggle_subcategory">
+                                    <input type="hidden" name="tab" value="<?= e($tab) ?>">
+                                    <input type="hidden" name="subcategory_id" value="<?= e((string) $subcategory['id']) ?>">
+                                    <button class="btn btn-sm btn-ghost" type="submit"><?= (int) $subcategory['is_active'] === 1 ? 'Disable' : 'Enable' ?></button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-head">
         <h2><?= $editService !== null ? 'Edit ' . e($tabLabel) . ' Service' : 'Add ' . e($tabLabel) . ' Service' ?></h2>
         <?php if ($editService !== null): ?>
             <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?tab=' . urlencode($tab))) ?>">Cancel edit</a>
@@ -230,14 +365,21 @@ layout_start('Services & Items', 'app');
                     <p class="subtle">Shown to customers and staff when they add an item.</p>
                 </div>
                 <div class="form-group">
-                    <label class="required">Billed by</label>
-                    <input type="text" value="<?= e($tab === 'kg' ? 'Per kg' : 'Per piece') ?>" readonly>
-                    <p class="subtle"><?= $tab === 'kg' ? 'Weight is entered at booking and verified at pickup.' : ($tab === 'extra' ? 'Extras are charged as quantity x rate.' : 'Charged as quantity x rate.') ?></p>
+                    <label for="price_metric" class="required">Pricing metric</label>
+                    <?php if ($tab === 'kg'): ?>
+                        <input type="text" value="Per kg (weight × rate)" readonly>
+                    <?php else: ?>
+                        <select name="price_metric" id="price_metric">
+                            <option value="per_piece"<?= (string) ($editService['price_mode'] ?? 'per_piece') !== 'fixed' ? ' selected' : '' ?>>Per piece (qty × rate)</option>
+                            <option value="fixed"<?= (string) ($editService['price_mode'] ?? '') === 'fixed' ? ' selected' : '' ?>>Fixed rate (qty × fixed base rate)</option>
+                        </select>
+                    <?php endif; ?>
+                    <p class="subtle"><?= $tab === 'kg' ? 'Weight is entered at booking and verified at pickup. Pieces are counted for inventory only.' : ($tab === 'extra' ? 'Extras are charged as quantity x rate. Use fixed for flat-price add-ons.' : 'Charged as quantity x rate. Use fixed for specialty articles such as helmets.') ?></p>
                 </div>
                 <div class="form-group">
                     <label for="rate" class="required">Rate (<?= e(APP_CURRENCY) ?>)</label>
                     <input type="number" id="rate" name="rate" min="0.01" step="0.01" value="<?= e((string) ($editService['rate'] ?? '0')) ?>" required>
-                    <p class="subtle">Base rate for this service<?= $tab === 'kg' ? ' per kilogram' : ' per piece' ?>.</p>
+                    <p class="subtle">Base rate for this service<?= $tab === 'kg' ? ' per kilogram' : ' per unit' ?>.</p>
                 </div>
                 <?php if ($tab === 'kg'): ?>
                     <div class="form-group">
@@ -284,7 +426,7 @@ layout_start('Services & Items', 'app');
                         <tr>
                             <td><strong><?= e((string) $service['service_name']) ?></strong></td>
                             <td><?= e(service_mode_label((string) $service['price_mode'])) ?></td>
-                            <td class="num"><?= e(money((float) $service['rate'])) ?><?= $service['price_mode'] === 'per_kg' ? ' / kg' : ' / pc' ?></td>
+                            <td class="num"><?= e(money((float) $service['rate'])) ?><?= $service['price_mode'] === 'per_kg' ? ' / kg' : ($service['price_mode'] === 'fixed' ? ' fixed' : ' / pc') ?></td>
                             <td><span class="badge <?= (int) $service['is_active'] === 1 ? 'badge-success' : 'badge-muted' ?>"><?= (int) $service['is_active'] === 1 ? 'Active' : 'Inactive' ?></span></td>
                             <td class="actions">
                                 <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?tab=' . urlencode($tab) . '&edit_service=' . (int) $service['id'])) ?>">Edit</a>
@@ -337,6 +479,18 @@ layout_start('Services & Items', 'app');
                         </select>
                     </div>
                     <div class="form-group">
+                        <label for="subcategory_id">Subcategory</label>
+                        <select name="subcategory_id" id="subcategory_id">
+                            <option value="0">Unassigned</option>
+                            <?php foreach ($subcategories as $subcategory): ?>
+                                <option value="<?= (int) $subcategory['id'] ?>"<?= (int) ($editItem['subcategory_id'] ?? 0) === (int) $subcategory['id'] ? ' selected' : '' ?>>
+                                    <?= e((string) $subcategory['name']) ?><?= (int) $subcategory['is_active'] === 1 ? '' : ' (inactive)' ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <span class="subtle">The article sits under this subcategory on the order screen.</span>
+                    </div>
+                    <div class="form-group">
                         <label for="rate_override"><?= $tab === 'extra' ? 'Price' : 'Rate override' ?> (<?= e(APP_CURRENCY) ?>)</label>
                         <input type="number" id="rate_override" name="rate_override" min="0" step="0.01" value="<?= e((string) ($editItem !== null ? service_effective_rate(['price_mode' => $editItem['price_mode'], 'rate' => 0], $editItem) : '0')) ?>">
                         <span class="subtle">Leave 0 to use the service rate.</span>
@@ -367,7 +521,8 @@ layout_start('Services & Items', 'app');
                 <table class="data">
                     <thead>
                         <tr>
-                            <th>Item</th>
+                            <th>Article</th>
+                            <th>Subcategory</th>
                             <th>Service</th>
                             <th>Billing</th>
                             <th class="num">Rate</th>
@@ -383,12 +538,14 @@ layout_start('Services & Items', 'app');
                             'rate' => (float) ($item['service_rate'] ?? 0),
                         ];
                         $rate = service_effective_rate($serviceRow, $item);
+                        $itemMode = (string) ($item['service_price_mode'] ?? $item['price_mode']);
                         ?>
                         <tr>
                             <td><strong><?= e((string) $item['item_name']) ?></strong></td>
+                            <td><?= e((string) ($item['subcategory_name'] ?? 'Unassigned')) ?></td>
                             <td><?= e((string) ($item['service_name'] ?? service_type_label((string) $item['service_type']))) ?></td>
-                            <td><?= e(service_mode_label((string) ($item['service_price_mode'] ?? $item['price_mode']))) ?></td>
-                            <td class="num"><?= e(money($rate)) ?><?= ($item['service_price_mode'] ?? $item['price_mode']) === 'per_kg' ? ' / kg' : ' / pc' ?></td>
+                            <td><?= e(service_mode_label($itemMode)) ?></td>
+                            <td class="num"><?= e(money($rate)) ?><?= $itemMode === 'per_kg' ? ' / kg' : ($itemMode === 'fixed' ? ' fixed' : ' / pc') ?></td>
                             <td><span class="badge <?= (int) $item['is_active'] === 1 ? 'badge-success' : 'badge-muted' ?>"><?= (int) $item['is_active'] === 1 ? 'Active' : 'Inactive' ?></span></td>
                             <td class="actions">
                                 <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?tab=' . urlencode($tab) . '&edit=' . (int) $item['id'])) ?>">Edit</a>
