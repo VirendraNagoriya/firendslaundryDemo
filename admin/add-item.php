@@ -15,7 +15,7 @@ layout_start('Add Item', 'app');
 <div class="app-content" style="padding:0;">
     <div style="padding:.75rem 1rem; border-bottom:1px solid var(--line); background:#fff; display:flex; justify-content:space-between; align-items:center;">
         <strong>Add Item</strong>
-        <a class="btn btn-sm btn-ghost" href="<?= e(url($backUrl)) ?>">Done &amp; Back</a>
+        <a class="btn btn-sm btn-ghost done-back" href="<?= e(url($backUrl)) ?>">Done &amp; Back</a>
     </div>
     <div style="padding:1rem;">
         <?php render_item_picker([], $catalog, ['draft_key' => 'admin-order', 'intro' => 'Tap an article to add it. Items are saved automatically.']); ?>
