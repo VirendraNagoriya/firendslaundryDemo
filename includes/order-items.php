@@ -373,15 +373,10 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
         <template data-item-template><?= item_card_html(['item_name' => '', 'qty' => 1, 'weight_kg' => 0, 'rate' => 0], $catalogListId, 0, $services) ?></template>
 
         <div class="sheet-backdrop" data-sheet-backdrop hidden></div>
-        <div class="sheet layout-pos" data-sheet role="dialog" aria-modal="true" aria-label="Add an item" hidden>
+        <div class="sheet layout-stacked" data-sheet role="dialog" aria-modal="true" aria-label="Add an item" hidden>
             <div class="sheet-grip"></div>
             <div class="sheet-head">
                 <h3>Add an item</h3>
-                <div class="layout-switcher">
-                    <button type="button" data-layout="pos" class="active">POS</button>
-                    <button type="button" data-layout="stacked">Stacked</button>
-                    <button type="button" data-layout="compact">Compact</button>
-                </div>
                 <button type="button" class="sheet-close" data-sheet-close aria-label="Close">&times;</button>
             </div>
             <div class="sheet-search">
