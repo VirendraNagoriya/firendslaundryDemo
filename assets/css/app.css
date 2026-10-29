@@ -1144,25 +1144,39 @@ table.data tbody tr:last-child td { border-bottom: 0; }
 }
 @media (max-width: 768px) {
     .sheet {
-        width: 96vw;
-        max-height: 92vh;
+        top: 0;
+        left: 0;
+        transform: none;
+        width: 100vw;
+        height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
     }
     .sheet-body.pos-layout {
         grid-template-columns: 1fr;
         grid-template-rows: auto 1fr auto;
+        padding: .75rem;
     }
     .pos-filters {
         border-right: 0;
         border-bottom: 1px solid var(--line);
         padding-right: 0;
-        padding-bottom: .75rem;
-        max-height: 40vh;
+        padding-bottom: .5rem;
+        max-height: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+        align-items: flex-start;
     }
-    .pos-articles { max-height: 45vh; }
+    .pos-filters .sheet-section { flex: 1 1 100%; }
+    .pos-articles { max-height: none; }
     .pos-details {
         border-left: 0;
         border-top: 1px solid var(--line);
         padding-left: 0;
-        padding-top: .75rem;
+        padding-top: .5rem;
+        position: sticky;
+        bottom: 0;
+        background: #fff;
     }
 }
