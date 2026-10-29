@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($order === null) {
             $errors[] = 'Order not found.';
         } elseif ($action === 'add_items') {
-            $items = collect_items_from_post(true);
+            $items = collect_items_from_post(true, $errors);
             if ($items === []) {
                 $errors[] = 'Please add at least one item.';
             } else {
@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             db_exec('DELETE FROM order_items WHERE order_id = ?', [$orderId]);
 
             // Add new items
-            $items = collect_items_from_post(true);
+            $items = collect_items_from_post(true, $errors);
             if ($items === []) {
                 $errors[] = 'Please add at least one item.';
             } else {

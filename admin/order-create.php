@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Please enter the delivery address.';
     }
 
-    $items = collect_items_from_post(true);
+    $items = collect_items_from_post(true, $errors);
 
     if ($errors === []) {
         try {

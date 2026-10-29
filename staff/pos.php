@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect('staff/pos.php?order_id=' . $orderId);
             }
         } else {
-            $items = collect_items_from_post(true);
+            $items = collect_items_from_post(true, $errors);
             if ($items === []) {
                 $errors[] = 'Please add at least one item.';
             } else {

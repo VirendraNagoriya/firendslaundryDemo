@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $newItems = [];
     if (!$closed) {
-        $newItems = collect_items_from_post(true);
+        $newItems = collect_items_from_post(true, $errors);
         if ($newItems === []) {
             $errors[] = 'Please add at least one item to the order.';
         }

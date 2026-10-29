@@ -22,6 +22,7 @@ function layout_nav_items(): array
                 ['label' => 'Service Catalog', 'href' => 'admin/catalog.php', 'icon' => 'M4 6h16v12H4V6zm2 2v8h12V8H6zm2 2h8v2H8v-2z'],
                 ['label' => 'Staff Accounts', 'href' => 'admin/staff.php', 'icon' => 'M12 12a4 4 0 100-8 4 4 0 000 8zm-9 8a9 9 0 1118 0H3z'],
                 ['label' => 'Backup', 'href' => 'admin/backup.php', 'icon' => 'M12 3l4 4h-3v6h-2V7H8l4-4zm-7 15h14v3H5v-3z'],
+                ['label' => 'WhatsApp Messages', 'href' => 'admin/whatsapp-templates.php', 'icon' => 'M12 3a9 9 0 00-7.7 13.6L3 21l4.5-1.2A9 9 0 1012 3zm-4 6h8v2H8V9zm0 3h6v2H8v-2z'],
                 ['label' => 'Settings', 'href' => 'admin/settings.php', 'icon' => 'M12 8a4 4 0 100 8 4 4 0 000-8zm9 4l-2 1.2.3 2.3-2.3.3L15.5 18l-1.9-1.4L12 17.6l-1.6-1L8.5 18l-1.5-2.2-2.3-.3.3-2.3L3 12l2-1.2-.3-2.3L7 8.2 8.5 6l1.9 1.4L12 6.4l1.6 1L15.5 6l1.5 2.2 2.3.3-.3 2.3L21 12z'],
             ];
         case 'staff':

@@ -130,6 +130,11 @@ CREATE TABLE IF NOT EXISTS order_items (
   weight_verified_by INT UNSIGNED NULL,
   weight_verified_at DATETIME NULL,
   rate DECIMAL(12,2) NOT NULL DEFAULT 0,
+  catalog_rate DECIMAL(12,2) NOT NULL DEFAULT 0,
+  rate_changed_by INT UNSIGNED NULL,
+  rate_changed_by_name VARCHAR(100) NULL,
+  rate_change_reason VARCHAR(255) NULL,
+  rate_changed_at DATETIME NULL,
   amount DECIMAL(12,2) NOT NULL DEFAULT 0,
   notes VARCHAR(255) NULL,
   KEY idx_order_items_order (order_id),
@@ -170,6 +175,16 @@ CREATE TABLE IF NOT EXISTS settings (
   setting_key VARCHAR(60) NOT NULL PRIMARY KEY,
   setting_value VARCHAR(255) NULL,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS whatsapp_templates (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  event_key VARCHAR(40) NOT NULL,
+  body TEXT NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  updated_by INT UNSIGNED NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_whatsapp_event (event_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS audit_logs (

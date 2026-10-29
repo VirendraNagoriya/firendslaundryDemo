@@ -565,6 +565,20 @@ details.fold .fold-body { padding: .9rem; }
 .item-field-label { font-size: .74rem; text-transform: uppercase; letter-spacing: .4px; color: var(--ink-soft); font-weight: 600; }
 .item-field-amount { text-align: right; justify-items: end; }
 .item-field-amount strong { font-size: 1.05rem; }
+.rate-readonly { display: block; padding: .55rem .7rem; border: 1px dashed var(--line); border-radius: 10px; background: #f7f9fc; font-size: 1rem; }
+.rate-original { color: var(--ink-soft); text-decoration: line-through; }
+.rate-old { display: block; color: var(--ink-soft); text-decoration: line-through; font-size: .82rem; }
+.rate-reason { display: block; color: var(--ink-soft); font-size: .78rem; }
+.rate-reason-field input { font-size: .88rem; }
+.item-warning {
+    margin: .5rem 0 0; padding: .45rem .6rem; border-radius: 8px; background: #fff4e5;
+    border: 1px solid #f3d19b; color: #8a5a00; font-size: .82rem;
+}
+.sheet-error {
+    margin: .2rem 0 0; padding: .55rem .7rem; border-radius: 10px; background: #fdecec;
+    border: 1px solid #f4bcbc; color: #9d1c1c; font-size: .86rem;
+}
+.sheet-rate-reason { margin-top: .35rem; font-size: .88rem; }
 
 /* Segmented control (per piece / per kg) */
 .segmented { display: flex; gap: .25rem; background: #f2f5fa; padding: .2rem; border-radius: 9px; }
@@ -825,3 +839,20 @@ body.sheet-open { overflow: hidden; }
 .item-field-hint { display: block; font-size: .7rem; line-height: 1.3; color: var(--ink-soft); margin-top: .2rem; }
 .item-picker-hint { margin: -.2rem 0 .2rem; font-size: .78rem; }
 .quick-picks-empty { margin: .35rem 0 0; font-size: .78rem; }
+
+/* WhatsApp templates + send buttons */
+.whatsapp-btn { white-space: nowrap; }
+.wa-card { border: 1px solid var(--line); border-radius: 14px; padding: .85rem; margin: .9rem 0; background: #fbfcfe; }
+.wa-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: .75rem; flex-wrap: wrap; margin-bottom: .55rem; }
+.wa-card-head h3 { margin: 0; font-size: .95rem; }
+.wa-textarea { width: 100%; min-height: 7.5rem; padding: .65rem .75rem; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: .88rem; line-height: 1.45; resize: vertical; background: #fff; }
+.wa-textarea:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
+.wa-preview { margin-top: .5rem; }
+.wa-preview summary { cursor: pointer; font-size: .8rem; color: var(--brand-dark); font-weight: 600; }
+.wa-preview pre { margin: .45rem 0 0; padding: .7rem .8rem; background: #e9f7ee; border: 1px solid #c7e8d3; border-radius: 10px; white-space: pre-wrap; word-break: break-word; font-size: .82rem; line-height: 1.45; }
+.wa-actions { display: flex; justify-content: flex-end; margin-top: .35rem; }
+.switch { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; color: var(--ink-soft); }
+.switch input { width: 1rem; height: 1rem; }
+.wa-send-list { display: grid; gap: .45rem; margin-top: .5rem; }
+.wa-send-list .btn { justify-content: flex-start; text-align: left; }
+.item-picker-total .badge { font-size: .62rem; vertical-align: middle; margin-right: .15rem; }

@@ -203,7 +203,74 @@
             return chip && chip.getAttribute('data-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
         }
 
-        function syncSheetService() {
+        function catalogEntry(serviceId, name) {
+            var term = String(name || '').trim().toLowerCase();
+            if (term === '') { return null; }
+            var found = null;
+            catalogForService(serviceId).forEach(function (entry) {
+                if (!found && entry.name.toLowerCase() === term) { found = entry; }
+            });
+            return found;
+        }
+
+        function sheetRateInput() {
+            return sheet ? sheet.querySelector('[data-sheet-rate]') : null;
+        }
+
+        function markRateManual(input) {
+            if (input && input.getAttribute('type') === 'number') {
+                input.setAttribute('data-rate-manual', '1');
+            }
+        }
+
+        function rateIsManual(input) {
+            return !!(input && input.getAttribute('data-rate-manual') === '1');
+        }
+
+        function setSheetError(message) {
+            var box = sheet ? sheet.querySelector('[data-sheet-error]') : null;
+            if (!box) {
+                if (message) { showNotification(message); }
+                return;
+            }
+            box.textContent = message || '';
+            box.hidden = !message;
+            if (message && box.scrollIntoView) {
+                box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        function updateSheetRateUI() {
+            if (!sheet) { return; }
+            var rateInput = sheetRateInput();
+            if (!rateInput) { return; }
+            var catalogRate = num(rateInput.getAttribute('data-catalog-rate'));
+            var value = num(rateInput.value);
+            var changed = catalogRate > 0 && Math.abs(value - catalogRate) > 0.004;
+            var reason = sheet.querySelector('[data-sheet-rate-reason]');
+            if (reason) { reason.hidden = !changed; }
+            var original = sheet.querySelector('[data-sheet-rate-original]');
+            if (original) {
+                original.hidden = !changed;
+                original.textContent = changed ? 'Catalog ' + currency + catalogRate.toFixed(2) : '';
+            }
+            var readonly = sheet.querySelector('[data-sheet-rate-readonly]');
+            if (readonly) { readonly.textContent = currency + value.toFixed(2); }
+        }
+
+        function updateSheetMinWeight() {
+            if (!sheet) { return; }
+            var chip = selectedServiceChip();
+            var nameInput = sheet.querySelector('[data-sheet-name]');
+            var hint = sheet.querySelector('[data-sheet-min-weight]');
+            if (!chip || !hint) { return; }
+            var entry = catalogEntry(chip.value, nameInput ? nameInput.value : '');
+            var minimum = entry ? num(entry.min_weight_kg) : 0;
+            hint.hidden = minimum <= 0;
+            hint.textContent = minimum > 0 ? ('Minimum ' + minimum + ' kg for ' + entry.name) : '';
+        }
+
+        function syncSheetService(resetRate) {
             if (!sheet) { return; }
             var chip = selectedServiceChip();
             var mode = chipMode(chip);
@@ -211,14 +278,22 @@
             var weightField = sheet.querySelector('[data-sheet-weight]');
             var custom = sheet.querySelector('[data-custom-name]');
             var kgNote = sheet.querySelector('[data-kg-note]');
-            var rateInput = sheet.querySelector('[data-sheet-rate]');
+            var rateInput = sheetRateInput();
             var serviceId = chip ? chip.value : '';
 
             if (qtyField) { qtyField.hidden = mode === 'per_kg'; }
             if (weightField) { weightField.hidden = mode !== 'per_kg'; }
             if (custom) { custom.hidden = mode === 'per_kg'; }
             if (kgNote) { kgNote.hidden = mode !== 'per_kg'; }
-            if (rateInput && chip) { rateInput.value = chip.getAttribute('data-rate') || 0; }
+
+            if (rateInput) {
+                var catalogRate = chip ? num(chip.getAttribute('data-rate')) : 0;
+                rateInput.setAttribute('data-catalog-rate', String(catalogRate));
+                if (resetRate || !rateIsManual(rateInput)) {
+                    rateInput.value = catalogRate;
+                    rateInput.removeAttribute('data-rate-manual');
+                }
+            }
 
             var visible = 0;
             picker.querySelectorAll('[data-quick-item]').forEach(function (button) {
@@ -229,8 +304,9 @@
             var empty = picker.querySelector('[data-quick-empty]');
             if (empty) { empty.hidden = visible > 0; }
 
-            var nameInput = sheet.querySelector('[data-sheet-name]');
-            if (nameInput) { nameInput.value = ''; }
+            setSheetError('');
+            updateSheetRateUI();
+            updateSheetMinWeight();
         }
 
         function showEmptyState() {
@@ -274,6 +350,46 @@
             nameInput.setAttribute('list', serviceDatalist.id);
         }
 
+        function updateCardRateUI(card) {
+            if (!card) { return; }
+            var rateInput = card.querySelector('[data-rate-input]');
+            var catalogRate = num(card.getAttribute('data-catalog-rate'));
+            var value = rateInput ? num(rateInput.value) : 0;
+            var changed = catalogRate > 0 && Math.abs(value - catalogRate) > 0.004;
+            var reasonInput = card.querySelector('[data-rate-reason]');
+            var hasReason = !!(reasonInput && reasonInput.value.trim() !== '');
+            var reasonField = card.querySelector('[data-rate-reason-field]');
+            if (reasonField) { reasonField.hidden = !(changed || hasReason); }
+            var original = card.querySelector('[data-rate-original]');
+            if (original) {
+                original.hidden = !changed;
+                original.textContent = changed ? 'Catalog ' + currency + catalogRate.toFixed(2) : '';
+            }
+        }
+
+        function warnIfKgNameMismatch(card) {
+            if (!card) { return; }
+            var warning = card.querySelector('[data-item-warning]');
+            if (!warning) { return; }
+            var modeValue = card.querySelector('[data-mode-value]');
+            var mode = modeValue ? modeValue.value : 'per_piece';
+            var select = card.querySelector('[data-service-select]');
+            var nameInput = card.querySelector('[name="item_name[]"]');
+            var name = nameInput ? nameInput.value.trim() : '';
+            if (mode !== 'per_kg' || name === '') {
+                warning.hidden = true;
+                warning.textContent = '';
+                return;
+            }
+            if (catalogEntry(select ? select.value : '', name)) {
+                warning.hidden = true;
+                warning.textContent = '';
+                return;
+            }
+            warning.hidden = false;
+            warning.textContent = 'Pick an item from this kg service, or switch to a piece service.';
+        }
+
         function applyService(card, mode, rate, setRate) {
             var modeValue = card.querySelector('[data-mode-value]');
             if (modeValue) { modeValue.value = mode; }
@@ -288,10 +404,15 @@
             if (weightField) { weightField.hidden = mode !== 'per_kg'; }
             card.setAttribute('data-service-mode', mode);
             if (setRate) {
+                card.setAttribute('data-catalog-rate', String(rate));
                 var rateInput = card.querySelector('[data-rate-input]');
-                if (rateInput) { rateInput.value = rate; }
+                if (rateInput && !rateIsManual(rateInput)) {
+                    rateInput.value = rate;
+                }
             }
             syncServiceDatalist(card, mode);
+            warnIfKgNameMismatch(card);
+            updateCardRateUI(card);
         }
 
         function setCardValues(card, data) {
@@ -305,11 +426,51 @@
             var weight = card.querySelector('[name="item_weight[]"]');
             if (weight) { weight.value = mode === 'per_kg' ? (data.weight === undefined ? 1 : data.weight) : 0; }
             var rate = card.querySelector('[name="item_rate[]"]');
+            var catalogRate = data.catalog_rate === undefined ? (data.rate === undefined ? 0 : data.rate) : data.catalog_rate;
             if (rate) { rate.value = data.rate === undefined ? 0 : data.rate; }
-            applyService(card, mode, data.rate === undefined ? 0 : data.rate, false);
+            card.setAttribute('data-catalog-rate', String(catalogRate));
+            card.setAttribute('data-min-weight', String(data.min_weight === undefined ? 0 : data.min_weight));
+            var reason = card.querySelector('[data-rate-reason]');
+            if (reason) { reason.value = data.reason || ''; }
+            applyService(card, mode, catalogRate, false);
+            updateCardRateUI(card);
+        }
+
+        function findMatchingCard(data) {
+            if (!list) { return null; }
+            var mode = data.mode === 'per_kg' ? 'per_kg' : 'per_piece';
+            var rate = num(data.rate);
+            var cards = list.querySelectorAll('[data-item-row]');
+            for (var i = 0; i < cards.length; i++) {
+                var card = cards[i];
+                var select = card.querySelector('[data-service-select]');
+                var nameInput = card.querySelector('[name="item_name[]"]');
+                var rateInput = card.querySelector('[data-rate-input]');
+                var sameService = String(select ? select.value : '') === String(data.service_id);
+                var sameName = String(nameInput ? nameInput.value.trim().toLowerCase() : '') === String(data.name || '').trim().toLowerCase();
+                var sameMode = card.getAttribute('data-service-mode') === mode;
+                var sameRate = Math.abs(num(rateInput ? rateInput.value : 0) - rate) < 0.005;
+                if (sameService && sameName && sameMode && sameRate) { return card; }
+            }
+            return null;
         }
 
         function addCard(data) {
+            var existing = findMatchingCard(data);
+            if (existing) {
+                if (data.mode === 'per_kg') {
+                    var weight = existing.querySelector('[name="item_weight[]"]');
+                    if (weight) { weight.value = (num(weight.value) + num(data.weight)).toFixed(1); }
+                } else {
+                    var qty = existing.querySelector('[name="item_qty[]"]');
+                    if (qty) { qty.value = String(num(qty.value) + (num(data.qty) || 1)); }
+                }
+                refresh();
+                existing.classList.add('is-new');
+                window.setTimeout(function () { existing.classList.remove('is-new'); }, 400);
+                return existing;
+            }
+
             var card = newCard();
             if (!card || !list) { return null; }
             setCardValues(card, data);
@@ -335,11 +496,21 @@
             if (qtyInput) { qtyInput.value = 1; }
             if (weightInput) { weightInput.value = 1; }
 
+            var nameInput = sheet.querySelector('[data-sheet-name]');
+            if (nameInput) { nameInput.value = ''; }
+            var rateInput = sheetRateInput();
+            if (rateInput) {
+                rateInput.removeAttribute('data-rate-manual');
+                rateInput.value = 0;
+            }
+            var reasonInput = sheet.querySelector('[data-sheet-rate-reason]');
+            if (reasonInput) { reasonInput.value = ''; }
+            setSheetError('');
+
             // Start with the service list visible so the item is always saved
             // against the service the user actually chooses.
             setSelectionMode('service-first');
-
-            syncSheetService();
+            syncSheetService(true);
             sheet.hidden = false;
             if (backdrop) { backdrop.hidden = false; }
             document.body.classList.add('sheet-open');
@@ -393,50 +564,87 @@
         function addFromSheet() {
             if (!sheet) { return; }
             var nameInput = sheet.querySelector('[data-sheet-name]');
-            var rateInput = sheet.querySelector('[data-sheet-rate]');
+            var rateInput = sheetRateInput();
             var qtyInput = sheet.querySelector('[data-sheet-qty]');
             var weightInput = sheet.querySelector('[data-sheet-weight]');
             var chip = selectedServiceChip();
             var mode = chipMode(chip);
             var serviceId = chip ? chip.value : '';
             var name = nameInput ? nameInput.value.trim() : '';
-            var extraChargeAmount = num(sheet.querySelector('[data-extra-charge-amount]') ? sheet.querySelector('[data-extra-charge-amount]').value : 0);
-            var extraChargeNotes = sheet.querySelector('[data-extra-charge-notes]') ? sheet.querySelector('[data-extra-charge-notes]').value : '';
+            var entry = null;
+
+            if (!chip) {
+                setSheetError('Choose a service first.');
+                return;
+            }
 
             if (mode === 'per_kg') {
-                var match = null;
-                catalogForService(serviceId).forEach(function (entry) {
-                    if (!match && entry.name.toLowerCase() === name.toLowerCase()) { match = entry; }
-                });
-                if (!match) {
-                    var first = picker.querySelector('[data-quick-item][data-service-id="' + serviceId + '"]');
-                    if (first && first.scrollIntoView) {
-                        first.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
+                if (name === '') {
+                    setSheetError('Type or pick the item name first.');
+                    if (nameInput) { nameInput.focus(); }
                     return;
                 }
-                name = match.name;
+                entry = catalogEntry(serviceId, name);
+                if (!entry) {
+                    var names = catalogForService(serviceId).map(function (item) { return item.name; });
+                    setSheetError(names.length
+                        ? 'Choose one of this service\'s items: ' + names.slice(0, 6).join(', ') + (names.length > 6 ? '…' : '') + '.'
+                        : 'This service has no catalog items yet. Add them in Admin → Services & items.');
+                    return;
+                }
+                name = entry.name;
+                var kg = num(weightInput ? weightInput.value : 0);
+                if (kg <= 0) {
+                    setSheetError('Enter the estimated weight in kg.');
+                    if (weightInput) { weightInput.focus(); }
+                    return;
+                }
+                if (num(entry.min_weight_kg) > 0 && kg + 0.0001 < num(entry.min_weight_kg)) {
+                    setSheetError('Minimum weight for ' + entry.name + ' is ' + entry.min_weight_kg + ' kg.');
+                    if (weightInput) { weightInput.focus(); }
+                    return;
+                }
             } else if (name === '') {
+                setSheetError('Type the item name first.');
                 if (nameInput) { nameInput.focus(); }
                 return;
             }
+
+            var rate = num(rateInput ? rateInput.value : 0);
+            var catalogRate = rateInput ? num(rateInput.getAttribute('data-catalog-rate')) : 0;
+            var reasonInput = sheet.querySelector('[data-sheet-rate-reason]');
+            var reason = reasonInput ? reasonInput.value.trim() : '';
+            var changed = catalogRate > 0 && Math.abs(rate - catalogRate) > 0.004;
+            var reasonRequired = !!sheet.querySelector('[data-sheet-rate-field][data-requires-reason="1"]');
+            if (changed && reasonRequired && reason === '') {
+                setSheetError('Add a reason for changing the rate.');
+                if (reasonInput) { reasonInput.focus(); }
+                return;
+            }
+
+            var weight = mode === 'per_kg' ? num(weightInput ? weightInput.value : 0) : 0;
+            var qty = Math.max(1, Math.floor(num(qtyInput ? qtyInput.value : 1)) || 1);
 
             var card = addCard({
                 name: name,
                 service_id: serviceId,
                 mode: mode,
-                qty: num(qtyInput ? qtyInput.value : 1) || 1,
-                weight: num(weightInput ? weightInput.value : 1) || 1,
-                rate: num(rateInput ? rateInput.value : 0),
-                extra_charge: extraChargeAmount > 0 ? {
-                    amount: extraChargeAmount,
-                    notes: extraChargeNotes
-                } : null
+                qty: qty,
+                weight: weight || 1,
+                rate: rate > 0 ? rate : catalogRate,
+                catalog_rate: catalogRate,
+                min_weight: entry ? num(entry.min_weight_kg) : 0,
+                reason: changed ? reason : ''
             });
 
-            // Show confirmation message
-            var serviceName = chip ? chip.nextElementSibling.textContent : name;
-            showNotification('Item added: ' + name + ' (' + serviceName + ')');
+            var extraChargeAmount = num(sheet.querySelector('[data-extra-charge-amount]') ? sheet.querySelector('[data-extra-charge-amount]').value : 0);
+            var extraChargeNotes = sheet.querySelector('[data-extra-charge-notes]') ? sheet.querySelector('[data-extra-charge-notes]').value : '';
+            if (card && extraChargeAmount > 0) {
+                card.setAttribute('data-pending-extra-charge', String(extraChargeAmount));
+                card.setAttribute('data-pending-extra-charge-notes', extraChargeNotes);
+            }
+
+            showNotification('Item added: ' + name + (mode === 'per_kg' ? ' · ' + (weight || 1) + ' kg' : ' · ' + qty + ' pc'));
 
             closeSheet();
             if (card && card.scrollIntoView) {
@@ -446,15 +654,9 @@
 
         function applyCatalogDefaults(nameInput) {
             var term = nameInput.value.trim().toLowerCase();
-            if (term === '' || !sheet) { return; }
+            if (term === '' || !sheet) { updateSheetMinWeight(); return; }
             var chip = selectedServiceChip();
-            var serviceId = chip ? chip.value : '';
-            var found = null;
-            catalog.forEach(function (entry) {
-                if (!found && entry.name.toLowerCase() === term && String(entry.service_id) === String(serviceId)) {
-                    found = entry;
-                }
-            });
+            var found = catalogEntry(chip ? chip.value : '', term);
             if (!found) {
                 // Typing an item in "Item first" mode should also pick the
                 // service that owns that item, not silently keep the first one.
@@ -472,9 +674,14 @@
                     }
                 }
             }
-            if (!found) { return; }
-            var rate = sheet.querySelector('[data-sheet-rate]');
-            if (rate) { rate.value = found.rate; }
+            if (!found) { updateSheetMinWeight(); return; }
+            var rate = sheetRateInput();
+            if (rate) {
+                rate.setAttribute('data-catalog-rate', String(found.rate));
+                if (!rateIsManual(rate)) { rate.value = found.rate; }
+            }
+            updateSheetRateUI();
+            updateSheetMinWeight();
         }
 
         picker.addEventListener('click', function (event) {
@@ -491,14 +698,46 @@
                 var pick = null;
                 try { pick = JSON.parse(quick.getAttribute('data-quick-item')); } catch (err) { pick = null; }
                 if (!pick) { return; }
+
+                if (pick.mode === 'per_kg') {
+                    // Weighing needs a deliberate weight, so pre-fill the sheet
+                    // instead of silently adding 1 kg.
+                    var quickChip = sheet.querySelector('input[name="sheet_service_id"][value="' + pick.service_id + '"]');
+                    if (quickChip) {
+                        quickChip.checked = true;
+                        syncSheetService();
+                    }
+                    var quickName = sheet.querySelector('[data-sheet-name]');
+                    if (quickName) { quickName.value = pick.name; }
+                    var quickRate = sheetRateInput();
+                    if (quickRate) {
+                        quickRate.removeAttribute('data-rate-manual');
+                        quickRate.value = pick.rate;
+                        quickRate.setAttribute('data-catalog-rate', String(pick.rate));
+                    }
+                    var quickWeight = sheet.querySelector('[data-sheet-weight]');
+                    if (quickWeight) { quickWeight.value = 1; }
+                    var reason = sheet.querySelector('[data-sheet-rate-reason]');
+                    if (reason) { reason.value = ''; }
+                    updateSheetRateUI();
+                    updateSheetMinWeight();
+                    setSheetError('');
+                    if (quickWeight) { quickWeight.focus(); }
+                    showNotification(pick.name + ': enter the estimated kg, then tap Add to order.');
+                    return;
+                }
+
                 var card = addCard({
                     name: pick.name,
                     service_id: pick.service_id,
                     mode: pick.mode,
                     qty: 1,
-                    weight: 1,
-                    rate: pick.rate
+                    weight: 0,
+                    rate: pick.rate,
+                    catalog_rate: pick.rate,
+                    min_weight: pick.min_weight_kg || 0
                 });
+                showNotification('Added ' + pick.name);
                 closeSheet();
                 if (card && card.scrollIntoView) {
                     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -546,9 +785,35 @@
         });
 
         picker.addEventListener('input', function (event) {
-            if (event.target.matches('[data-sheet-name]')) {
-                applyCatalogDefaults(event.target);
+            var target = event.target;
+
+            if (target.matches('[data-sheet-name]')) {
+                applyCatalogDefaults(target);
                 return;
+            }
+            if (target.matches('[data-sheet-rate]')) {
+                markRateManual(target);
+                updateSheetRateUI();
+                return;
+            }
+            if (target.matches('[data-sheet-rate-reason]')) {
+                updateSheetRateUI();
+                return;
+            }
+            if (target.matches('[data-rate-input]')) {
+                markRateManual(target);
+                var rateRow = target.closest('[data-item-row]');
+                if (rateRow) { updateCardRateUI(rateRow); }
+                return;
+            }
+            if (target.matches('[data-rate-reason]')) {
+                var reasonRow = target.closest('[data-item-row]');
+                if (reasonRow) { updateCardRateUI(reasonRow); }
+                return;
+            }
+            if (target.matches('[name="item_name[]"]')) {
+                var nameRow = target.closest('[data-item-row]');
+                if (nameRow) { warnIfKgNameMismatch(nameRow); }
             }
             refresh();
         });
@@ -561,8 +826,8 @@
                     var option = target.options[target.selectedIndex];
                     var mode = option && option.getAttribute('data-mode') === 'per_kg' ? 'per_kg' : 'per_piece';
                     var rate = option ? num(option.getAttribute('data-rate')) : 0;
-                    var nameInput = row.querySelector('[name="item_name[]"]');
-                    if (nameInput) { nameInput.value = ''; }
+                    // Keep the typed item name. Only the billing mode and the
+                    // default rate follow the service, and a manual rate wins.
                     applyService(row, mode, rate, true);
                 }
                 refresh();

@@ -77,6 +77,11 @@ foreach ([
     ['weight_verified', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER weight_kg'],
     ['weight_verified_by', 'INT UNSIGNED NULL AFTER weight_verified'],
     ['weight_verified_at', 'DATETIME NULL AFTER weight_verified_by'],
+    ['catalog_rate', 'DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER rate'],
+    ['rate_changed_by', 'INT UNSIGNED NULL AFTER catalog_rate'],
+    ['rate_changed_by_name', 'VARCHAR(100) NULL AFTER rate_changed_by'],
+    ['rate_change_reason', 'VARCHAR(255) NULL AFTER rate_changed_by_name'],
+    ['rate_changed_at', 'DATETIME NULL AFTER rate_change_reason'],
 ] as [$column, $definition]) {
     if (!table_column($pdo, 'order_items', $column)) {
         $pdo->exec('ALTER TABLE order_items ADD COLUMN `' . $column . '` ' . $definition);

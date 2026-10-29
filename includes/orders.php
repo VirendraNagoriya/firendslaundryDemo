@@ -6,6 +6,44 @@ function order_number_for(int $id): string
     return 'LF' . date('ymd') . '-' . str_pad((string) $id, 5, '0', STR_PAD_LEFT);
 }
 
+/**
+ * Add the rate-override audit columns to older databases. Runs at most once per
+ * request and only when the sentinel column is missing, so a fresh install or a
+ * database already migrated by database/migrate.php pays no cost.
+ */
+function ensure_order_item_pricing_schema(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $exists = (int) db_value(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'order_items' AND COLUMN_NAME = 'catalog_rate'",
+            [],
+            0
+        );
+        if ($exists > 0) {
+            return;
+        }
+        db_exec(
+            'ALTER TABLE order_items
+                ADD COLUMN catalog_rate DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER rate,
+                ADD COLUMN rate_changed_by INT UNSIGNED NULL AFTER catalog_rate,
+                ADD COLUMN rate_changed_by_name VARCHAR(100) NULL AFTER rate_changed_by,
+                ADD COLUMN rate_change_reason VARCHAR(255) NULL AFTER rate_changed_by_name,
+                ADD COLUMN rate_changed_at DATETIME NULL AFTER rate_change_reason'
+        );
+        db_exec('UPDATE order_items SET catalog_rate = rate WHERE catalog_rate = 0 AND rate > 0');
+        audit('schema.rate_overrides', 'schema', 'order_items', 'Rate override audit columns added');
+    } catch (Throwable $e) {
+        app_log_throwable($e);
+    }
+}
+
 function order_item_amount(array $item): float
 {
     $qty = (float) ($item['qty'] ?? 0);
@@ -16,6 +54,26 @@ function order_item_amount(array $item): float
         return round($weight * $rate, 2);
     }
     return round($qty * $rate, 2);
+}
+
+/**
+ * Details of a rate override on an invoice line, or null when the catalog rate
+ * was used. Used by the order screens to show the old rate, who changed it and why.
+ */
+function order_item_rate_change(array $item): ?array
+{
+    $catalog = (float) ($item['catalog_rate'] ?? 0);
+    $rate = (float) ($item['rate'] ?? 0);
+    if ($catalog <= 0 || abs($rate - $catalog) <= 0.004) {
+        return null;
+    }
+    return [
+        'from' => $catalog,
+        'to' => $rate,
+        'by' => trim((string) ($item['rate_changed_by_name'] ?? '')),
+        'reason' => trim((string) ($item['rate_change_reason'] ?? '')),
+        'at' => (string) ($item['rate_changed_at'] ?? ''),
+    ];
 }
 
 /**
@@ -114,11 +172,16 @@ function normalise_order_item(array $item): ?array
             return null;
         }
         $rate = (float) ($item['rate'] ?? 0);
-        if ($rate <= 0) {
-            $rate = $catalog !== null
+        $catalogRate = (float) ($item['catalog_rate'] ?? 0);
+        if ($catalogRate <= 0) {
+            $catalogRate = $catalog !== null
                 ? service_effective_rate($service, $catalog)
                 : (float) $service['rate'];
         }
+        if ($rate <= 0) {
+            $rate = $catalogRate;
+        }
+        $rateChanged = $catalogRate > 0 && abs($rate - $catalogRate) > 0.004;
         $qty = max(1, (int) ($item['qty'] ?? 1));
         $weight = max(0.0, (float) ($item['weight_kg'] ?? 0));
         $verified = $mode === 'per_kg' ? (int) ($item['weight_verified'] ?? 0) : 1;
@@ -135,6 +198,15 @@ function normalise_order_item(array $item): ?array
             'weight_verified_by' => $verified ? ($item['weight_verified_by'] ?? null) : null,
             'weight_verified_at' => $verified ? ($item['weight_verified_at'] ?? now()) : null,
             'rate' => $rate,
+            'catalog_rate' => $catalogRate,
+            'rate_changed_by' => $rateChanged ? ($item['rate_changed_by'] ?? (current_user()['id'] ?? null)) : null,
+            'rate_changed_by_name' => $rateChanged ? ($item['rate_changed_by_name'] ?? (current_user()['name'] ?? null)) : null,
+            'rate_change_reason' => $rateChanged
+                ? (trim((string) ($item['rate_change_reason'] ?? '')) !== ''
+                    ? trim((string) $item['rate_change_reason'])
+                    : 'Adjusted by ' . role_label((string) (current_user()['role'] ?? 'owner')))
+                : null,
+            'rate_changed_at' => $rateChanged ? ($item['rate_changed_at'] ?? now()) : null,
             'amount' => $mode === 'per_kg' ? round($weight * $rate, 2) : round($qty * $rate, 2),
             'notes' => trim((string) ($item['notes'] ?? '')) !== '' ? trim((string) $item['notes']) : null,
             'catalog_item_id' => $catalog !== null ? (int) $catalog['id'] : 0,
@@ -144,6 +216,11 @@ function normalise_order_item(array $item): ?array
     // Legacy fallback so old callers/tests that only post service_type keep working.
     $mode = (string) ($item['price_mode'] ?? 'per_piece') === 'per_kg' ? 'per_kg' : 'per_piece';
     $rate = (float) ($item['rate'] ?? 0);
+    $catalogRate = (float) ($item['catalog_rate'] ?? 0);
+    if ($catalogRate <= 0) {
+        $catalogRate = $rate;
+    }
+    $rateChanged = $catalogRate > 0 && abs($rate - $catalogRate) > 0.004;
     $qty = max(1, (int) ($item['qty'] ?? 1));
     $weight = max(0.0, (float) ($item['weight_kg'] ?? 0));
     $verified = $mode === 'per_kg' ? (int) ($item['weight_verified'] ?? 0) : 1;
@@ -160,6 +237,15 @@ function normalise_order_item(array $item): ?array
         'weight_verified_by' => $verified ? ($item['weight_verified_by'] ?? null) : null,
         'weight_verified_at' => $verified ? ($item['weight_verified_at'] ?? now()) : null,
         'rate' => $rate,
+        'catalog_rate' => $catalogRate,
+        'rate_changed_by' => $rateChanged ? ($item['rate_changed_by'] ?? (current_user()['id'] ?? null)) : null,
+        'rate_changed_by_name' => $rateChanged ? ($item['rate_changed_by_name'] ?? (current_user()['name'] ?? null)) : null,
+        'rate_change_reason' => $rateChanged
+            ? (trim((string) ($item['rate_change_reason'] ?? '')) !== ''
+                ? trim((string) $item['rate_change_reason'])
+                : 'Adjusted by ' . role_label((string) (current_user()['role'] ?? 'owner')))
+            : null,
+        'rate_changed_at' => $rateChanged ? ($item['rate_changed_at'] ?? now()) : null,
         'amount' => $mode === 'per_kg' ? round($weight * $rate, 2) : round($qty * $rate, 2),
         'notes' => trim((string) ($item['notes'] ?? '')) !== '' ? trim((string) $item['notes']) : null,
         'catalog_item_id' => 0,
@@ -175,8 +261,9 @@ function insert_order_item(int $orderId, array $item): bool
     db_exec(
         'INSERT INTO order_items
             (order_id, service_id, item_name, service_name, service_type, price_mode, qty,
-             weight_kg, weight_verified, weight_verified_by, weight_verified_at, rate, amount, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+             weight_kg, weight_verified, weight_verified_by, weight_verified_at, rate, catalog_rate,
+             rate_changed_by, rate_changed_by_name, rate_change_reason, rate_changed_at, amount, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
             $orderId,
             $normalised['service_id'],
@@ -190,6 +277,11 @@ function insert_order_item(int $orderId, array $item): bool
             $normalised['weight_verified_by'],
             $normalised['weight_verified_at'],
             $normalised['rate'],
+            $normalised['catalog_rate'],
+            $normalised['rate_changed_by'],
+            $normalised['rate_changed_by_name'],
+            $normalised['rate_change_reason'],
+            $normalised['rate_changed_at'],
             $normalised['amount'],
             $normalised['notes'],
         ]

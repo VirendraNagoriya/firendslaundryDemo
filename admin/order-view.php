@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
+require_once dirname(__DIR__) . '/includes/whatsapp.php';
 
 $user = require_admin();
 $orderId = query_int('id');
@@ -165,7 +166,17 @@ layout_start('Order ' . $order['order_number'], 'app');
                                         <span class="badge <?= (int) $item['weight_verified'] === 1 ? 'badge-success' : 'badge-warn' ?>"><?= (int) $item['weight_verified'] === 1 ? 'Verified' : 'Estimated' ?></span>
                                     <?php endif; ?>
                                 </td>
-                                <td class="num"><?= e(money((float) $item['rate'])) ?></td>
+                                <td class="num">
+                                    <?= e(money((float) $item['rate'])) ?>
+                                    <?php $rateChange = order_item_rate_change($item); ?>
+                                    <?php if ($rateChange !== null): ?>
+                                        <span class="rate-old" title="Catalog rate"><?= e(money((float) $rateChange['from'])) ?></span>
+                                        <span class="badge badge-warn">Override<?= $rateChange['by'] !== '' ? ' &middot; ' . e($rateChange['by']) : '' ?></span>
+                                        <?php if ($rateChange['reason'] !== ''): ?>
+                                            <span class="rate-reason"><?= e($rateChange['reason']) ?></span>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="num"><?= e(money((float) $item['amount'])) ?></td>
                             </tr>
                         <?php endforeach; ?>
@@ -335,6 +346,43 @@ layout_start('Order ' . $order['order_number'], 'app');
                             <?php endforeach; ?>
                             </tbody>
                         </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><h3>WhatsApp Updates</h3></div>
+            <div class="panel-body">
+                <?php
+                $waSuggested = whatsapp_event_for_status((string) $order['status']);
+                $waSent = 0;
+                ?>
+                <p class="subtle">Opens WhatsApp with the order details filled in. Edit the wording in
+                    <a href="<?= e(url('admin/whatsapp-templates.php')) ?>">WhatsApp Messages</a>.</p>
+                <div class="wa-send-list">
+                    <?php foreach (whatsapp_events() as $waEvent => $waLabel): ?>
+                        <?php
+                        $waLink = whatsapp_link($order, $waEvent);
+                        if ($waLink === null) {
+                            continue;
+                        }
+                        $waSent++;
+                        $isSuggested = $waEvent === $waSuggested;
+                        ?>
+                        <a class="btn btn-sm <?= $isSuggested ? 'btn-primary' : 'btn-ghost' ?> whatsapp-btn"
+                           href="<?= e($waLink) ?>" target="_blank" rel="noopener">
+                            <span aria-hidden="true">&#128241;</span> <?= e($waLabel) ?><?= $isSuggested ? ' (suggested)' : '' ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+                <?php if ($waSent === 0): ?>
+                    <div class="empty-state">
+                        <?php if (whatsapp_phone((string) $order['contact_phone']) === null): ?>
+                            This order has no valid 10-digit customer mobile number, so WhatsApp messages cannot be opened.
+                        <?php else: ?>
+                            All WhatsApp messages are switched off. Turn them on in WhatsApp Messages.
+                        <?php endif; ?>
                     </div>
                 <?php endif; ?>
             </div>

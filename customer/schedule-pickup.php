@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    $items = collect_items_from_post(false);
+    $items = collect_items_from_post(false, $errors);
     if ($items === []) {
         $errors[] = 'Please add at least one item to the order.';
     }
