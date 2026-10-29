@@ -304,7 +304,7 @@
             if (out) { out.textContent = amount.toFixed(2); }
             var addButton = sheet.querySelector('[data-sheet-add]');
             if (addButton) {
-                addButton.textContent = 'Add to order  ·  ' + currency + amount.toFixed(2);
+                addButton.textContent = 'Save & Add Next  ·  ' + currency + amount.toFixed(2);
             }
         }
 
