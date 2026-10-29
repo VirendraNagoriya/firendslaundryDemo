@@ -80,6 +80,7 @@ $pdo->exec(
     "CREATE TABLE IF NOT EXISTS subcategories (
         id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(80) NOT NULL,
+        icon VARCHAR(40) NULL,
         slug VARCHAR(80) NOT NULL,
         sort_order INT NOT NULL DEFAULT 0,
         is_active TINYINT(1) NOT NULL DEFAULT 1,
@@ -91,6 +92,7 @@ $pdo->exec(
 );
 foreach ([
     ['laundry_items', 'subcategory_id', 'INT UNSIGNED NULL AFTER service_id'],
+    ['laundry_items', 'image_path', 'VARCHAR(255) NULL AFTER item_name'],
     ['order_items', 'subcategory_id', 'INT UNSIGNED NULL AFTER service_id'],
     ['order_items', 'subcategory_name', 'VARCHAR(80) NULL AFTER subcategory_id'],
 ] as [$table, $column, $definition]) {
@@ -109,6 +111,10 @@ foreach (['services', 'laundry_items', 'order_items'] as $table) {
         );
         echo "{$table}.price_mode extended with fixed.\n";
     }
+}
+if (!table_column($pdo, 'subcategories', 'icon')) {
+    $pdo->exec('ALTER TABLE subcategories ADD COLUMN icon VARCHAR(40) NULL AFTER name');
+    echo "subcategories.icon added.\n";
 }
 $subcategorySort = 0;
 $subcategoryInsert = $pdo->prepare(

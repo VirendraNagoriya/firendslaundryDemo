@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS customers (
 CREATE TABLE IF NOT EXISTS subcategories (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(80) NOT NULL,
+  icon VARCHAR(40) NULL,
   slug VARCHAR(80) NOT NULL,
   sort_order INT NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS laundry_items (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   service_id INT UNSIGNED NULL,
   subcategory_id INT UNSIGNED NULL,
+  image_path VARCHAR(255) NULL,
   item_name VARCHAR(120) NOT NULL,
   service_type VARCHAR(40) NOT NULL DEFAULT 'wash_fold',
   price_mode ENUM('per_piece','per_kg','fixed') NOT NULL DEFAULT 'per_piece',

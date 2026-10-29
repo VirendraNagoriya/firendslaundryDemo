@@ -346,15 +346,17 @@ function ensure_subcategory_schema(): void
         }
 
         // Seed the starter subcategories once.
+        $icons = ['Men' => '👔', 'Women' => '👗', 'Kids' => '👶', 'Household' => '🏠', 'Accessories' => '👟'];
         $sort = 0;
         foreach (default_subcategories() as $name) {
             $sort += 10;
             $slug = subcategory_slug($name);
+            $icon = $icons[$name] ?? null;
             db_exec(
-                'INSERT INTO subcategories (name, slug, sort_order, is_active)
-                 VALUES (?, ?, ?, 1)
-                 ON DUPLICATE KEY UPDATE name = VALUES(name)',
-                [$name, $slug, $sort]
+                'INSERT INTO subcategories (name, icon, slug, sort_order, is_active)
+                 VALUES (?, ?, ?, ?, 1)
+                 ON DUPLICATE KEY UPDATE name = VALUES(name), icon = COALESCE(icon, VALUES(icon))',
+                [$name, $icon, $slug, $sort]
             );
         }
         audit('schema.subcategories', 'schema', 'subcategories', 'Subcategory hierarchy ready');

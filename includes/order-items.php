@@ -406,7 +406,7 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                                 <label class="chip-choice">
                                     <input type="radio" name="sheet_subcategory_id" value="<?= (int) $subcategory['id'] ?>"
                                            data-subcategory="<?= e((string) $subcategory['name']) ?>">
-                                    <span><?= e((string) $subcategory['name']) ?></span>
+                                    <span><?= e((string) ($subcategory['icon'] ?? '')) ?> <?= e((string) $subcategory['name']) ?></span>
                                 </label>
                             <?php endforeach; ?>
                             <label class="chip-choice">

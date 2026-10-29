@@ -80,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save_subcategory') {
         $subcategoryId = (int) post('subcategory_id');
         $name = post('subcategory_name');
+        $icon = post('subcategory_icon');
         $sort = (int) post('sort_order');
         $active = post('is_active') === '1' ? 1 : 0;
 
@@ -98,15 +99,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($errors === []) {
             if ($subcategoryId > 0) {
                 db_exec(
-                    'UPDATE subcategories SET name = ?, slug = ?, sort_order = ?, is_active = ? WHERE id = ?',
-                    [$name, $slug, $sort, $active, $subcategoryId]
+                    'UPDATE subcategories SET name = ?, icon = ?, slug = ?, sort_order = ?, is_active = ? WHERE id = ?',
+                    [$name, $icon !== '' ? $icon : null, $slug, $sort, $active, $subcategoryId]
                 );
                 audit('subcategory.update', 'subcategory', (string) $subcategoryId, $name);
                 flash('success', 'Subcategory updated.');
             } else {
                 $newId = db_insert(
-                    'INSERT INTO subcategories (name, slug, sort_order, is_active) VALUES (?, ?, ?, ?)',
-                    [$name, $slug, $sort, $active]
+                    'INSERT INTO subcategories (name, icon, slug, sort_order, is_active) VALUES (?, ?, ?, ?, ?)',
+                    [$name, $icon !== '' ? $icon : null, $slug, $sort, $active]
                 );
                 audit('subcategory.create', 'subcategory', (string) $newId, $name);
                 flash('success', 'Subcategory created.');
@@ -131,6 +132,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $override = (float) post('rate_override');
         $active = post('is_active') === '1' ? 1 : 0;
         $service = $serviceId > 0 ? db_row('SELECT * FROM services WHERE id = ?', [$serviceId]) : null;
+
+        // Handle optional article image upload.
+        $imagePath = null;
+        if (isset($_FILES['item_image']) && (int) $_FILES['item_image']['error'] === UPLOAD_ERR_OK) {
+            $uploadDir = dirname(__DIR__) . '/assets/uploads/items/';
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+            $ext = strtolower(pathinfo((string) $_FILES['item_image']['name'], PATHINFO_EXTENSION));
+            if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true)) {
+                $fileName = 'item_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                $target = $uploadDir . $fileName;
+                if (move_uploaded_file((string) $_FILES['item_image']['tmp_name'], $target)) {
+                    $imagePath = 'assets/uploads/items/' . $fileName;
+                }
+            }
+        }
 
         if ($service !== null && isset($categories[service_category_for($service)])) {
             $tab = service_category_for($service);
@@ -165,18 +183,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $subcategoryValue = $subcategoryId > 0 && subcategory_by_id($subcategoryId) !== null ? $subcategoryId : null;
 
             if ($itemId > 0) {
-                db_exec(
-                    'UPDATE laundry_items SET service_id = ?, subcategory_id = ?, item_name = ?, service_type = ?, price_mode = ?,
-                     rate_per_piece = ?, rate_per_kg = ?, is_active = ? WHERE id = ?',
-                    [$serviceId, $subcategoryValue, $name, $serviceType, $mode, $perPiece, $perKg, $active, $itemId]
-                );
+                if ($imagePath !== null) {
+                    db_exec(
+                        'UPDATE laundry_items SET service_id = ?, subcategory_id = ?, item_name = ?, service_type = ?, price_mode = ?,
+                         rate_per_piece = ?, rate_per_kg = ?, image_path = ?, is_active = ? WHERE id = ?',
+                        [$serviceId, $subcategoryValue, $name, $serviceType, $mode, $perPiece, $perKg, $imagePath, $active, $itemId]
+                    );
+                } else {
+                    db_exec(
+                        'UPDATE laundry_items SET service_id = ?, subcategory_id = ?, item_name = ?, service_type = ?, price_mode = ?,
+                         rate_per_piece = ?, rate_per_kg = ?, is_active = ? WHERE id = ?',
+                        [$serviceId, $subcategoryValue, $name, $serviceType, $mode, $perPiece, $perKg, $active, $itemId]
+                    );
+                }
                 audit('catalog.update', 'laundry_item', (string) $itemId, $name);
                 flash('success', 'Item updated.');
             } else {
                 $newId = db_insert(
-                    'INSERT INTO laundry_items (service_id, subcategory_id, item_name, service_type, price_mode, rate_per_piece, rate_per_kg, is_active)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                    [$serviceId, $subcategoryValue, $name, $serviceType, $mode, $perPiece, $perKg, $active]
+                    'INSERT INTO laundry_items (service_id, subcategory_id, item_name, service_type, price_mode, rate_per_piece, rate_per_kg, image_path, is_active)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [$serviceId, $subcategoryValue, $name, $serviceType, $mode, $perPiece, $perKg, $imagePath, $active]
                 );
                 audit('catalog.create', 'laundry_item', (string) $newId, $name);
                 flash('success', 'Item added to the service.');
@@ -285,6 +311,11 @@ layout_start('Services & Items', 'app');
                     <p class="subtle">Groups articles on the order screen. Keep it broad, e.g. Men or Household.</p>
                 </div>
                 <div class="form-group">
+                    <label for="subcategory_icon">Icon (emoji)</label>
+                    <input type="text" id="subcategory_icon" name="subcategory_icon" value="<?= e((string) ($editSubcategory['icon'] ?? '')) ?>" placeholder="e.g. 👔">
+                    <p class="subtle">Shown next to the subcategory in the picker.</p>
+                </div>
+                <div class="form-group">
                     <label for="sort_order">Display order</label>
                     <input type="number" id="sort_order" name="sort_order" step="1" value="<?= e((string) ($editSubcategory['sort_order'] ?? 0)) ?>">
                     <p class="subtle">Lower numbers appear first.</p>
@@ -321,7 +352,7 @@ layout_start('Services & Items', 'app');
                     ?>
                     <?php foreach ($subcategories as $subcategory): ?>
                         <tr>
-                            <td><strong><?= e((string) $subcategory['name']) ?></strong></td>
+                            <td><strong><?= e((string) ($subcategory['icon'] ?? '')) ?> <?= e((string) $subcategory['name']) ?></strong></td>
                             <td><?= e((string) ($subcategoryCounts[(int) $subcategory['id']] ?? 0)) ?></td>
                             <td><span class="badge <?= (int) $subcategory['is_active'] === 1 ? 'badge-success' : 'badge-muted' ?>"><?= (int) $subcategory['is_active'] === 1 ? 'Active' : 'Inactive' ?></span></td>
                             <td class="actions">
@@ -496,6 +527,11 @@ layout_start('Services & Items', 'app');
                         <span class="subtle">Leave 0 to use the service rate.</span>
                     </div>
                     <div class="form-group">
+                        <label for="item_image">Article image (optional)</label>
+                        <input type="file" id="item_image" name="item_image" accept="image/*">
+                        <p class="subtle">Shown in the picker. Leave empty to keep the current image.</p>
+                    </div>
+                    <div class="form-group">
                         <label for="item_active">Status</label>
                         <select name="is_active" id="item_active">
                             <option value="1"<?= (int) ($editItem['is_active'] ?? 1) === 1 ? ' selected' : '' ?>>Active</option>
@@ -521,6 +557,7 @@ layout_start('Services & Items', 'app');
                 <table class="data">
                     <thead>
                         <tr>
+                            <th>Image</th>
                             <th>Article</th>
                             <th>Subcategory</th>
                             <th>Service</th>
@@ -541,6 +578,7 @@ layout_start('Services & Items', 'app');
                         $itemMode = (string) ($item['service_price_mode'] ?? $item['price_mode']);
                         ?>
                         <tr>
+                            <td><?php if (!empty($item['image_path'])): ?><img src="<?= e(url($item['image_path'])) ?>" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;"><?php else: ?>—<?php endif; ?></td>
                             <td><strong><?= e((string) $item['item_name']) ?></strong></td>
                             <td><?= e((string) ($item['subcategory_name'] ?? 'Unassigned')) ?></td>
                             <td><?= e((string) ($item['service_name'] ?? service_type_label((string) $item['service_type']))) ?></td>
