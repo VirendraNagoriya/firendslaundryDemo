@@ -284,6 +284,23 @@
             }
             var readonly = sheet.querySelector('[data-sheet-rate-readonly]');
             if (readonly) { readonly.textContent = currency + value.toFixed(2); }
+            updateSheetLineTotal();
+        }
+
+        function updateSheetLineTotal() {
+            if (!sheet) { return; }
+            var chip = selectedServiceChip();
+            var mode = chipMode(chip);
+            var qty = num(sheet.querySelector('[data-sheet-qty]') ? sheet.querySelector('[data-sheet-qty]').value : 1);
+            var weight = num(sheet.querySelector('[data-sheet-weight]') ? sheet.querySelector('[data-sheet-weight]').value : 0);
+            var rate = num(sheetRateInput() ? sheetRateInput().value : 0);
+            var amount = mode === 'per_kg' ? weight * rate : qty * rate;
+            var out = sheet.querySelector('[data-sheet-line-total]');
+            if (out) { out.textContent = amount.toFixed(2); }
+            var addButton = sheet.querySelector('[data-sheet-add]');
+            if (addButton) {
+                addButton.textContent = 'Add to order  ·  ' + currency + amount.toFixed(2);
+            }
         }
 
         function updateSheetMinWeight() {
@@ -900,6 +917,10 @@
             if (target.matches('[data-sheet-rate]')) {
                 markRateManual(target);
                 updateSheetRateUI();
+                return;
+            }
+            if (target.matches('[data-sheet-qty]') || target.matches('[data-sheet-weight]')) {
+                updateSheetLineTotal();
                 return;
             }
             if (target.matches('[data-sheet-rate-reason]')) {

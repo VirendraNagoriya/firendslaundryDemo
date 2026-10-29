@@ -475,6 +475,10 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                         <?php endif; ?>
                     </div>
                 </div>
+                <div class="sheet-field sheet-line-total">
+                    <span class="sheet-label">Line total</span>
+                    <strong><?= e(APP_CURRENCY) ?><span data-sheet-line-total>0.00</span></strong>
+                </div>
                 <p class="sheet-error" data-sheet-error hidden></p>
             </div>
             <div class="sheet-section sheet-filters-bottom">
