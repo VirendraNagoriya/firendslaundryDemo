@@ -587,6 +587,12 @@
                 tab.setAttribute('aria-selected', active ? 'true' : 'false');
             });
 
+            sheet.querySelectorAll('[data-item-tab-bottom]').forEach(function (tab) {
+                var active = tab.getAttribute('data-item-tab-bottom') === wanted;
+                tab.classList.toggle('active', active);
+                tab.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+
             var activeGroup = null;
             sheet.querySelectorAll('[data-chip-group]').forEach(function (group) {
                 var show = group.getAttribute('data-chip-group') === wanted;
@@ -624,6 +630,14 @@
             tab.addEventListener('click', function () {
                 activateSheetTab(tab.getAttribute('data-item-tab'));
             });
+        });
+
+        sheet.addEventListener('click', function (event) {
+            var bottomTab = event.target.closest('[data-item-tab-bottom]');
+            if (bottomTab) {
+                event.preventDefault();
+                activateSheetTab(bottomTab.getAttribute('data-item-tab-bottom'));
+            }
         });
 
         function closeSheet() {
@@ -829,10 +843,11 @@
                     min_weight: pick.min_weight_kg || 0
                 });
                 showNotification('Added ' + pick.name);
-                closeSheet();
-                if (card && card.scrollIntoView) {
-                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
+                // Keep the sheet open so several articles can be added in a row.
+                var quickNameInput = sheet.querySelector('[data-sheet-name]');
+                if (quickNameInput) { quickNameInput.value = ''; }
+                var quickQtyInput = sheet.querySelector('[data-sheet-qty]');
+                if (quickQtyInput) { quickQtyInput.value = 1; }
                 return;
             }
 

@@ -477,6 +477,14 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                 </div>
                 <p class="sheet-error" data-sheet-error hidden></p>
             </div>
+            <div class="sheet-section sheet-filters-bottom">
+                <span class="sheet-label">Quick type filter</span>
+                <div class="item-tabs" role="tablist" aria-label="Item type (bottom)" data-item-tabs-bottom>
+                    <button type="button" class="item-tab active" role="tab" data-item-tab-bottom="piece" aria-selected="true">Piece wise</button>
+                    <button type="button" class="item-tab" role="tab" data-item-tab-bottom="kg" aria-selected="false">Kg wise</button>
+                    <button type="button" class="item-tab" role="tab" data-item-tab-bottom="extra" aria-selected="false">Extra</button>
+                </div>
+            </div>
             <div class="sheet-foot">
                 <button type="button" class="btn btn-ghost" data-sheet-close>Cancel</button>
                 <button type="button" class="btn btn-primary btn-lg" data-sheet-add>Add to order</button>
