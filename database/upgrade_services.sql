@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS `services` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `service_name` VARCHAR(120) NOT NULL,
   `price_mode` ENUM('per_piece','per_kg') NOT NULL DEFAULT 'per_piece',
+  `category` ENUM('piece','kg','extra') NOT NULL DEFAULT 'piece',
   `rate` DECIMAL(12,2) NOT NULL DEFAULT 0,
   `min_weight_kg` DECIMAL(10,3) NOT NULL DEFAULT 0,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
@@ -39,6 +40,13 @@ SET @sql := IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHE
   'ALTER TABLE `laundry_items` ADD COLUMN `service_id` INT UNSIGNED NULL AFTER `id`',
   'SET @noop = 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 2b) services.category (piece / kg / extra)
+SET @sql := IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=@db AND TABLE_NAME='services' AND COLUMN_NAME='category')=0,
+  'ALTER TABLE `services` ADD COLUMN `category` ENUM(''piece'',''kg'',''extra'') NOT NULL DEFAULT ''piece'' AFTER `price_mode`',
+  'SET @noop = 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+UPDATE `services` SET `category` = 'kg' WHERE `price_mode` = 'per_kg' AND `category` <> 'kg';
 
 -- 3) orders.delivery_assigned_at (the column that broke order creation)
 SET @sql := IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=@db AND TABLE_NAME='orders' AND COLUMN_NAME='delivery_assigned_at')=0,
@@ -73,13 +81,14 @@ SET @sql := IF((SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHE
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 5) Create services from the existing catalog
-INSERT INTO `services` (`service_name`, `price_mode`, `rate`, `is_active`)
+INSERT INTO `services` (`service_name`, `price_mode`, `category`, `rate`, `is_active`)
 SELECT
   CASE
     WHEN g.`price_mode` = 'per_kg' AND g.`mode_count` > 1 THEN CONCAT(g.`label`, ' (kg)')
     ELSE g.`label`
   END,
   g.`price_mode`,
+  IF(g.`price_mode` = 'per_kg', 'kg', 'piece'),
   COALESCE(g.`sample_rate`, 0),
   1
 FROM (

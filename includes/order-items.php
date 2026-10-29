@@ -9,12 +9,14 @@ require_once __DIR__ . '/extra-charges.php';
  */
 function active_catalog(): array
 {
+    ensure_service_category_schema();
     return db_all(
-        'SELECT i.*, s.service_name, s.price_mode AS service_price_mode, s.rate AS service_rate
+        'SELECT i.*, s.service_name, s.price_mode AS service_price_mode, s.rate AS service_rate,
+                s.category AS service_category
          FROM laundry_items i
          JOIN services s ON s.id = i.service_id
          WHERE i.is_active = 1 AND s.is_active = 1
-         ORDER BY s.service_name, i.item_name'
+         ORDER BY FIELD(s.category, \'piece\', \'kg\', \'extra\'), s.service_name, i.item_name'
     );
 }
 
@@ -99,6 +101,7 @@ function catalog_rate_index(): array
             'name' => (string) $row['item_name'],
             'service_id' => (int) $row['service_id'],
             'service_name' => (string) ($row['service_name'] ?? ''),
+            'category' => service_category_for($row),
             'mode' => $mode,
             'rate' => service_effective_rate(
                 ['price_mode' => $mode, 'rate' => (float) ($row['service_rate'] ?? 0)],
@@ -140,6 +143,9 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
 
     $mode = (string) ($item['price_mode'] ?? ($selectedService['price_mode'] ?? 'per_piece'));
     $mode = $mode === 'per_kg' ? 'per_kg' : 'per_piece';
+    $category = $selectedService !== null
+        ? service_category_for($selectedService)
+        : ($mode === 'per_kg' ? 'kg' : 'piece');
     $name = (string) ($item['item_name'] ?? '');
     $qty = max(1, (int) ($item['qty'] ?? 1));
     $weight = (float) ($item['weight_kg'] ?? 0);
@@ -163,6 +169,7 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
         $serviceMode = (string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
         $serviceOptions .= '<option value="' . (int) $service['id'] . '"'
             . ' data-mode="' . e($serviceMode) . '"'
+            . ' data-category="' . e(service_category_for($service)) . '"'
             . ' data-type="' . e(service_type_for_name((string) $service['service_name'])) . '"'
             . ' data-rate="' . e((string) (float) $service['rate']) . '"'
             . ((int) $service['id'] === $serviceId ? ' selected' : '') . '>'
@@ -173,7 +180,7 @@ function item_card_html(array $item, string $catalogListId = '', int $index = 0,
 
     ob_start();
     ?>
-    <div class="item-card" data-item-row data-service-mode="<?= e($mode) ?>"
+    <div class="item-card" data-item-row data-service-mode="<?= e($mode) ?>" data-service-category="<?= e($category) ?>"
          data-catalog-rate="<?= e((string) $catalogRate) ?>" data-min-weight="<?= e((string) $minWeight) ?>">
         <div class="item-card-top">
             <div class="item-card-title">
@@ -277,6 +284,7 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
             'name' => (string) $row['item_name'],
             'service_id' => (int) $row['service_id'],
             'service' => (string) ($row['service_name'] ?? ''),
+            'category' => service_category_for($row),
             'service_type' => (string) $row['service_type'],
             'mode' => $mode,
             'rate' => $rate,
@@ -285,19 +293,31 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
     }
 
     $catalogJson = (string) json_encode($quickPicks, JSON_UNESCAPED_UNICODE);
-    $serviceChips = '';
+    $serviceChips = [];
+    $chipsChecked = false;
     foreach ($services as $service) {
         $mode = (string) $service['price_mode'] === 'per_kg' ? 'per_kg' : 'per_piece';
-        $serviceChips .= '<label class="chip-choice"><input type="radio" name="sheet_service_id" value="' . (int) $service['id'] . '"'
-            . ' data-mode="' . e($mode) . '" data-rate="' . e((string) (float) $service['rate']) . '"'
-            . ($serviceChips === '' ? ' checked' : '') . '><span>' . e((string) $service['service_name']) . '</span></label>';
+        $category = service_category_for($service);
+        $checked = !$chipsChecked && $category === 'piece';
+        if ($checked) {
+            $chipsChecked = true;
+        }
+        $serviceChips[$category] = ($serviceChips[$category] ?? '')
+            . '<label class="chip-choice"><input type="radio" name="sheet_service_id" value="' . (int) $service['id'] . '"'
+            . ' data-mode="' . e($mode) . '" data-category="' . e($category) . '" data-rate="' . e((string) (float) $service['rate']) . '"'
+            . ($checked ? ' checked' : '') . '><span>' . e((string) $service['service_name']) . '</span></label>';
+    }
+    // Make sure one chip is checked even when there is no piece service.
+    if ($serviceChips !== [] && !$chipsChecked) {
+        $firstCategory = array_key_first($serviceChips);
+        $serviceChips[$firstCategory] = preg_replace('/>/', ' checked>', $serviceChips[$firstCategory], 1);
     }
     ?>
     <div class="item-picker" data-item-picker data-currency="<?= e(APP_CURRENCY) ?>"<?= !empty($options['draft_key']) ? ' data-draft-key="' . e((string) $options['draft_key']) . '"' : '' ?>>
         <?php if (!empty($options['intro'])): ?>
             <p class="subtle item-picker-intro"><?= e((string) $options['intro']) ?></p>
         <?php endif; ?>
-        <p class="subtle item-picker-hint">For kg services, pick an item from the service list. The pickup boy verifies the actual weight.</p>
+        <p class="subtle item-picker-hint">Use the <b>Piece wise</b>, <b>Kg wise</b> or <b>Extra</b> tab. The pickup boy verifies the actual weight of kg items.</p>
 
         <div class="item-list" data-item-list>
             <?php if ($items === []): ?>
@@ -336,38 +356,48 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
             </div>
             <div class="sheet-body">
                 <div class="sheet-section">
-                    <div class="sheet-section-header">
-                        <span class="sheet-label">Add Item</span>
-                        <div class="selection-mode-toggle">
-                            <button type="button" class="mode-btn" data-mode="service-first">Service First</button>
-                            <button type="button" class="mode-btn active" data-mode="item-first">Item First</button>
-                        </div>
+                    <div class="item-tabs" role="tablist" aria-label="Item type" data-item-tabs>
+                        <?php foreach (service_categories() as $categoryKey => $categoryLabel): ?>
+                            <button type="button" class="item-tab<?= $categoryKey === 'piece' ? ' active' : '' ?>"
+                                    role="tab" data-item-tab="<?= e($categoryKey) ?>"
+                                    aria-selected="<?= $categoryKey === 'piece' ? 'true' : 'false' ?>">
+                                <?= e($categoryLabel) ?>
+                            </button>
+                        <?php endforeach; ?>
                     </div>
                 </div>
 
-                <div class="sheet-section service-first-mode">
+                <div class="sheet-section">
                     <span class="sheet-label">Service</span>
-                    <div class="chip-group"><?= $serviceChips ?></div>
+                    <?php foreach (service_categories() as $categoryKey => $categoryLabel): ?>
+                        <div class="chip-group" data-chip-group="<?= e($categoryKey) ?>"<?= $categoryKey === 'piece' ? '' : ' hidden' ?>>
+                            <?= $serviceChips[$categoryKey] ?? '' ?>
+                        </div>
+                    <?php endforeach; ?>
+                    <p class="subtle" data-tab-empty hidden>No service in this tab yet. Add one in Admin &rarr; Services &amp; items.</p>
                 </div>
 
-                <div class="sheet-section item-first-mode">
+                <div class="sheet-section">
                     <span class="sheet-label">Item name</span>
                     <input type="text" class="sheet-input" data-sheet-name list="<?= e($catalogListId) ?>" placeholder="e.g. Shirt, Saree, Curtains" autocomplete="off">
-                    <p class="subtle">Select an item to see available services</p>
+                    <p class="subtle" data-sheet-name-hint>Pick a service, then type or choose the item.</p>
                 </div>
 
                 <?php if ($quickPicks !== []): ?>
-                    <div class="sheet-section service-first-mode">
+                    <div class="sheet-section">
                         <span class="sheet-label">Tap to add</span>
                         <div class="quick-picks" data-quick-picks>
                             <?php foreach ($quickPicks as $pick): ?>
-                                <button type="button" class="quick-pick" data-service-id="<?= (int) $pick['service_id'] ?>" data-quick-item="<?= e((string) json_encode($pick, JSON_UNESCAPED_UNICODE)) ?>">
+                                <button type="button" class="quick-pick" data-service-id="<?= (int) $pick['service_id'] ?>"
+                                        data-category="<?= e($pick['category']) ?>"
+                                        data-quick-item="<?= e((string) json_encode($pick, JSON_UNESCAPED_UNICODE)) ?>"
+                                        <?= $pick['category'] === 'piece' ? '' : 'hidden' ?>>
                                     <strong><?= e($pick['name']) ?></strong>
                                     <span><?= e(APP_CURRENCY) ?><?= e(number_format((float) $pick['rate'], 2)) ?><?= $pick['mode'] === 'per_kg' ? ' / kg' : ' / pc' ?></span>
                                 </button>
                             <?php endforeach; ?>
                         </div>
-                        <p class="subtle quick-picks-empty" data-quick-empty hidden>This service has no catalog items yet. Add them in Admin &rarr; Services &amp; items.</p>
+                        <p class="subtle quick-picks-empty" data-quick-empty hidden>This tab has no catalog items yet. Add them in Admin &rarr; Services &amp; items.</p>
                     </div>
                 <?php endif; ?>
 

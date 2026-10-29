@@ -396,8 +396,12 @@
             if (modeValue) { modeValue.value = mode; }
             var serviceType = card.querySelector('[data-service-type]');
             var select = card.querySelector('[data-service-select]');
-            if (serviceType && select && select.selectedIndex >= 0) {
-                serviceType.value = select.options[select.selectedIndex].getAttribute('data-type') || '';
+            var selectedOption = select && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+            if (serviceType && selectedOption) {
+                serviceType.value = selectedOption.getAttribute('data-type') || '';
+            }
+            if (selectedOption) {
+                card.setAttribute('data-service-category', selectedOption.getAttribute('data-category') || (mode === 'per_kg' ? 'kg' : 'piece'));
             }
             var qtyField = card.querySelector('[data-field-qty]');
             var weightField = card.querySelector('[data-field-weight]');
@@ -508,50 +512,67 @@
             if (reasonInput) { reasonInput.value = ''; }
             setSheetError('');
 
-            // Start with the service list visible so the item is always saved
-            // against the service the user actually chooses.
-            setSelectionMode('service-first');
-            syncSheetService(true);
+            // Start on the first tab that actually has a service. Piece-wise is
+            // preferred; a kg-only or extra-only catalogue still opens cleanly.
+            var startTab = 'piece';
+            var groups = sheet.querySelectorAll('[data-chip-group]');
+            for (var g = 0; g < groups.length; g++) {
+                if (groups[g].querySelector('input[name="sheet_service_id"]')) {
+                    startTab = groups[g].getAttribute('data-chip-group') || 'piece';
+                    break;
+                }
+            }
+            activateSheetTab(startTab);
             sheet.hidden = false;
             if (backdrop) { backdrop.hidden = false; }
             document.body.classList.add('sheet-open');
         }
 
-        function setSelectionMode(mode) {
-            // Update toggle buttons
-            var toggleButtons = sheet.querySelectorAll('.mode-btn');
-            toggleButtons.forEach(function(btn) {
-                if (btn.dataset.mode === mode) {
-                    btn.classList.add('active');
-                } else {
-                    btn.classList.remove('active');
-                }
+        function activateSheetTab(category) {
+            if (!sheet) { return; }
+            var wanted = category || 'piece';
+            sheet.querySelectorAll('[data-item-tab]').forEach(function (tab) {
+                var active = tab.getAttribute('data-item-tab') === wanted;
+                tab.classList.toggle('active', active);
+                tab.setAttribute('aria-selected', active ? 'true' : 'false');
             });
 
-            // Show/hide sections based on mode
-            var serviceSections = sheet.querySelectorAll('.service-first-mode');
-            var itemSections = sheet.querySelectorAll('.item-first-mode');
+            var activeGroup = null;
+            sheet.querySelectorAll('[data-chip-group]').forEach(function (group) {
+                var show = group.getAttribute('data-chip-group') === wanted;
+                group.hidden = !show;
+                if (show) { activeGroup = group; }
+            });
 
-            if (mode === 'service-first') {
-                serviceSections.forEach(function(section) {
-                    section.classList.add('active');
-                });
-                itemSections.forEach(function(section) {
-                    section.classList.remove('active');
-                });
-            } else {
-                serviceSections.forEach(function(section) {
-                    section.classList.remove('active');
-                });
-                itemSections.forEach(function(section) {
-                    section.classList.add('active');
-                });
+            var chip = activeGroup ? activeGroup.querySelector('input[name="sheet_service_id"]') : null;
+            var checked = sheet.querySelector('input[name="sheet_service_id"]:checked');
+            if (chip && (!checked || checked.getAttribute('data-category') !== wanted)) {
+                chip.checked = true;
             }
+            var empty = sheet.querySelector('[data-tab-empty]');
+            if (empty) {
+                empty.hidden = !!(activeGroup && activeGroup.querySelector('input[name="sheet_service_id"]'));
+            }
+            var hint = sheet.querySelector('[data-sheet-name-hint]');
+            if (hint) {
+                hint.textContent = wanted === 'kg'
+                    ? 'Choose one of this kg service\'s catalog items, then enter the estimated weight.'
+                    : (wanted === 'extra'
+                        ? 'Add an add-on such as express delivery, stain removal or extra detergent.'
+                        : 'Pick a service, then type or choose the item.');
+            }
+            var nameField = sheet.querySelector('[data-sheet-name]');
+            if (nameField) {
+                nameField.placeholder = wanted === 'extra'
+                    ? 'e.g. Express Delivery, Stain Removal'
+                    : (wanted === 'kg' ? 'Choose a kg item' : 'e.g. Shirt, Saree, Curtains');
+            }
+            syncSheetService(true);
         }
 
-        sheet.querySelectorAll('.mode-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                setSelectionMode(btn.getAttribute('data-mode'));
+        sheet.querySelectorAll('[data-item-tab]').forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                activateSheetTab(tab.getAttribute('data-item-tab'));
             });
         });
 
@@ -669,6 +690,7 @@
                 if (found) {
                     var matchingChip = sheet.querySelector('input[name="sheet_service_id"][value="' + found.service_id + '"]');
                     if (matchingChip) {
+                        activateSheetTab(found.category || (found.mode === 'per_kg' ? 'kg' : 'piece'));
                         matchingChip.checked = true;
                         syncSheetService();
                         nameInput.value = found.name;
@@ -699,6 +721,8 @@
                 var pick = null;
                 try { pick = JSON.parse(quick.getAttribute('data-quick-item')); } catch (err) { pick = null; }
                 if (!pick) { return; }
+
+                activateSheetTab(pick.category || (pick.mode === 'per_kg' ? 'kg' : 'piece'));
 
                 if (pick.mode === 'per_kg') {
                     // Weighing needs a deliberate weight, so pre-fill the sheet

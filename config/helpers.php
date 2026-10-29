@@ -163,6 +163,75 @@ function service_modes(): array
     ];
 }
 
+/**
+ * The three catalogue tabs used by the item picker and the owner catalogue:
+ * piece-wise items, kg-wise items and optional extras/add-ons.
+ */
+function service_categories(): array
+{
+    return [
+        'piece' => 'Piece wise',
+        'kg' => 'Kg wise',
+        'extra' => 'Extra',
+    ];
+}
+
+function service_category_label(string $category): string
+{
+    $all = service_categories();
+    return $all[$category] ?? 'Piece wise';
+}
+
+/**
+ * Category of a service. Older rows only have price_mode, so derive it there.
+ */
+function service_category_for(array $service): string
+{
+    $category = (string) ($service['category'] ?? $service['service_category'] ?? '');
+    if (isset(service_categories()[$category])) {
+        return $category;
+    }
+    return (string) ($service['price_mode'] ?? $service['service_price_mode'] ?? 'per_piece') === 'per_kg' ? 'kg' : 'piece';
+}
+
+/**
+ * Billing mode for a category. Extras are billed like pieces (qty x rate).
+ */
+function service_mode_for_category(string $category): string
+{
+    return $category === 'kg' ? 'per_kg' : 'per_piece';
+}
+
+/**
+ * Add the category column to older databases. Called lazily before a service
+ * query so customer/staff pages keep working until the migration is run.
+ */
+function ensure_service_category_schema(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+
+    try {
+        $exists = (int) db_value(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'services' AND COLUMN_NAME = 'category'",
+            [],
+            0
+        );
+        if ($exists > 0) {
+            return;
+        }
+        db_exec("ALTER TABLE services ADD COLUMN category ENUM('piece','kg','extra') NOT NULL DEFAULT 'piece' AFTER price_mode");
+        db_exec("UPDATE services SET category = 'kg' WHERE price_mode = 'per_kg'");
+        audit('schema.service_categories', 'schema', 'services', 'Service category column added');
+    } catch (Throwable $e) {
+        app_log_throwable($e);
+    }
+}
+
 function service_mode_label(string $mode): string
 {
     $all = service_modes();
@@ -201,12 +270,14 @@ function service_type_for_name(string $name): string
 
 function active_services(): array
 {
-    return db_all('SELECT * FROM services WHERE is_active = 1 ORDER BY service_name');
+    ensure_service_category_schema();
+    return db_all("SELECT * FROM services WHERE is_active = 1 ORDER BY FIELD(category, 'piece', 'kg', 'extra'), service_name");
 }
 
 function all_services(): array
 {
-    return db_all('SELECT * FROM services ORDER BY is_active DESC, service_name');
+    ensure_service_category_schema();
+    return db_all("SELECT * FROM services ORDER BY FIELD(category, 'piece', 'kg', 'extra'), is_active DESC, service_name");
 }
 
 /**

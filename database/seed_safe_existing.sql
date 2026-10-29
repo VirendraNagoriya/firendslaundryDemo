@@ -34,12 +34,13 @@ WHERE NOT EXISTS (SELECT 1 FROM `customers` WHERE phone_key = '9812345670');
 -- ------------------------------------------------------------
 -- 2) Laundry catalog (skipped if the service/item already exists)
 -- ------------------------------------------------------------
-INSERT IGNORE INTO `services` (`service_name`, `price_mode`, `rate`, `is_active`) VALUES
-('Wash & Iron', 'per_piece', 15.00, 1),
-('Wash & Fold', 'per_piece', 10.00, 1),
-('Wash & Fold (kg)', 'per_kg', 60.00, 1),
-('Dry Clean', 'per_piece', 90.00, 1),
-('Shoe Cleaning', 'per_piece', 200.00, 1);
+INSERT IGNORE INTO `services` (`service_name`, `price_mode`, `category`, `rate`, `is_active`) VALUES
+('Wash & Iron', 'per_piece', 'piece', 15.00, 1),
+('Wash & Fold', 'per_piece', 'piece', 10.00, 1),
+('Wash & Fold (kg)', 'per_kg', 'kg', 60.00, 1),
+('Dry Clean', 'per_piece', 'piece', 90.00, 1),
+('Shoe Cleaning', 'per_piece', 'piece', 200.00, 1),
+('Express & Add-ons', 'per_piece', 'extra', 50.00, 1);
 
 -- Every item must belong to a service. Without service_id the item picker and
 -- catalog page cannot load the item, so resolve the service by name here.
@@ -58,6 +59,9 @@ FROM (
   UNION ALL SELECT 'Dress / Saree', 'Dry Clean', 'dry_clean', 'per_piece', 90.00, 0
   UNION ALL SELECT 'Suit / Blazer', 'Dry Clean', 'dry_clean', 'per_piece', 120.00, 0
   UNION ALL SELECT 'Sneakers', 'Shoe Cleaning', 'shoe_clean', 'per_piece', 200.00, 0
+  UNION ALL SELECT 'Express Delivery', 'Express & Add-ons', 'other', 'per_piece', 50.00, 0
+  UNION ALL SELECT 'Stain Removal', 'Express & Add-ons', 'other', 'per_piece', 30.00, 0
+  UNION ALL SELECT 'Extra Detergent', 'Express & Add-ons', 'other', 'per_piece', 20.00, 0
 ) AS c
 JOIN `services` s ON s.service_name = c.service_name;
 

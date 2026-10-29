@@ -67,6 +67,11 @@ if (!table_column($pdo, 'laundry_items', 'service_id')) {
     $pdo->exec('ALTER TABLE laundry_items ADD COLUMN service_id INT UNSIGNED NULL AFTER id');
     echo "laundry_items.service_id added.\n";
 }
+if (!table_column($pdo, 'services', 'category')) {
+    $pdo->exec("ALTER TABLE services ADD COLUMN category ENUM('piece','kg','extra') NOT NULL DEFAULT 'piece' AFTER price_mode");
+    echo "services.category added.\n";
+}
+$pdo->exec("UPDATE services SET category = 'kg' WHERE price_mode = 'per_kg' AND category <> 'kg'");
 if (!table_column($pdo, 'orders', 'delivery_assigned_at')) {
     $pdo->exec('ALTER TABLE orders ADD COLUMN delivery_assigned_at DATETIME NULL AFTER pickup_assigned_at');
     echo "orders.delivery_assigned_at added.\n";
@@ -123,9 +128,9 @@ foreach ($legacyGroups as $group) {
     $serviceId = $existing->fetchColumn();
     if ($serviceId === false) {
         $insert = $pdo->prepare(
-            'INSERT INTO services (service_name, price_mode, rate, is_active) VALUES (?, ?, ?, 1)'
+            'INSERT INTO services (service_name, price_mode, category, rate, is_active) VALUES (?, ?, ?, ?, 1)'
         );
-        $insert->execute([$label, $mode, $rate]);
+        $insert->execute([$label, $mode, $mode === 'per_kg' ? 'kg' : 'piece', $rate]);
         $serviceId = (int) $pdo->lastInsertId();
     } else {
         $serviceId = (int) $serviceId;

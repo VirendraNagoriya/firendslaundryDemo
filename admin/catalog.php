@@ -5,25 +5,36 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/layout.php';
 
 $user = require_admin();
+ensure_service_category_schema();
 $errors = [];
+$categories = service_categories();
+$tab = query('tab', 'piece');
+if (!isset($categories[$tab])) {
+    $tab = 'piece';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
     $action = post('action');
+    $postedTab = post('tab', 'piece');
+    if (isset($categories[$postedTab])) {
+        $tab = $postedTab;
+    }
 
     if ($action === 'save_service') {
         $serviceId = (int) post('service_id');
         $name = post('service_name');
-        $mode = post('price_mode');
+        $category = post('category', $tab);
+        if (!isset($categories[$category])) {
+            $category = $tab;
+        }
+        $mode = service_mode_for_category($category);
         $rate = (float) post('rate');
-        $minWeight = (float) post('min_weight_kg');
+        $minWeight = $category === 'kg' ? (float) post('min_weight_kg') : 0.0;
         $active = post('is_active') === '1' ? 1 : 0;
 
         if ($name === '') {
             $errors[] = 'Please enter the service name.';
-        }
-        if (!isset(service_modes()[$mode])) {
-            $errors[] = 'Please select a valid billing mode.';
         }
         if ($rate <= 0) {
             $errors[] = 'Enter a rate greater than zero.';
@@ -39,29 +50,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($errors === []) {
             if ($serviceId > 0) {
                 db_exec(
-                    'UPDATE services SET service_name = ?, price_mode = ?, rate = ?, min_weight_kg = ?, is_active = ? WHERE id = ?',
-                    [$name, $mode, $rate, $minWeight, $active, $serviceId]
+                    'UPDATE services SET service_name = ?, price_mode = ?, category = ?, rate = ?, min_weight_kg = ?, is_active = ? WHERE id = ?',
+                    [$name, $mode, $category, $rate, $minWeight, $active, $serviceId]
                 );
                 audit('service.update', 'service', (string) $serviceId, $name);
                 flash('success', 'Service updated.');
             } else {
                 $newId = db_insert(
-                    'INSERT INTO services (service_name, price_mode, rate, min_weight_kg, is_active) VALUES (?, ?, ?, ?, ?)',
-                    [$name, $mode, $rate, $minWeight, $active]
+                    'INSERT INTO services (service_name, price_mode, category, rate, min_weight_kg, is_active) VALUES (?, ?, ?, ?, ?, ?)',
+                    [$name, $mode, $category, $rate, $minWeight, $active]
                 );
                 audit('service.create', 'service', (string) $newId, $name);
                 flash('success', 'Service created.');
             }
-            redirect('admin/catalog.php');
+            redirect('admin/catalog.php?tab=' . urlencode($category));
         }
     }
 
     if ($action === 'toggle_service') {
         $serviceId = (int) post('service_id');
+        $serviceRow = db_row('SELECT * FROM services WHERE id = ?', [$serviceId]);
         db_exec('UPDATE services SET is_active = 1 - is_active WHERE id = ?', [$serviceId]);
         audit('service.toggle', 'service', (string) $serviceId);
         flash('success', 'Service status updated.');
-        redirect('admin/catalog.php');
+        redirect('admin/catalog.php?tab=' . urlencode(service_category_for($serviceRow ?? [])));
     }
 
     if ($action === 'save_item') {
@@ -71,6 +83,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $override = (float) post('rate_override');
         $active = post('is_active') === '1' ? 1 : 0;
         $service = $serviceId > 0 ? db_row('SELECT * FROM services WHERE id = ?', [$serviceId]) : null;
+
+        if ($service !== null && isset($categories[service_category_for($service)])) {
+            $tab = service_category_for($service);
+        }
 
         if ($name === '') {
             $errors[] = 'Please enter the item name.';
@@ -114,35 +130,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 audit('catalog.create', 'laundry_item', (string) $newId, $name);
                 flash('success', 'Item added to the service.');
             }
-            redirect('admin/catalog.php');
+            redirect('admin/catalog.php?tab=' . urlencode($tab));
         }
     }
 
     if ($action === 'toggle_item') {
         $itemId = (int) post('item_id');
+        $itemRow = db_row(
+            'SELECT i.*, s.category AS service_category FROM laundry_items i LEFT JOIN services s ON s.id = i.service_id WHERE i.id = ?',
+            [$itemId]
+        );
         db_exec('UPDATE laundry_items SET is_active = 1 - is_active WHERE id = ?', [$itemId]);
         audit('catalog.toggle', 'laundry_item', (string) $itemId);
         flash('success', 'Item status updated.');
-        redirect('admin/catalog.php');
+        redirect('admin/catalog.php?tab=' . urlencode(service_category_for($itemRow ?? [])));
     }
 }
 
 $services = all_services();
 $items = db_all(
-    'SELECT i.*, s.service_name, s.price_mode AS service_price_mode, s.rate AS service_rate
+    'SELECT i.*, s.service_name, s.price_mode AS service_price_mode, s.rate AS service_rate,
+            s.category AS service_category
      FROM laundry_items i
      LEFT JOIN services s ON s.id = i.service_id
-     ORDER BY s.service_name, i.is_active DESC, i.item_name'
+     ORDER BY FIELD(s.category, \'piece\', \'kg\', \'extra\'), s.service_name, i.is_active DESC, i.item_name'
 );
+
+$servicesByCategory = [];
+foreach ($services as $service) {
+    $servicesByCategory[service_category_for($service)][] = $service;
+}
+$itemsByCategory = [];
+foreach ($items as $item) {
+    $itemsByCategory[service_category_for($item)][] = $item;
+}
 
 $editService = null;
 if (query_int('edit_service') > 0) {
     $editService = db_row('SELECT * FROM services WHERE id = ?', [query_int('edit_service')]);
+    if ($editService !== null) {
+        $tab = service_category_for($editService);
+    }
 }
 $editItem = null;
 if (query_int('edit') > 0) {
     $editItem = db_row('SELECT * FROM laundry_items WHERE id = ?', [query_int('edit')]);
+    if ($editItem !== null) {
+        $itemService = $editItem['service_id'] !== null
+            ? db_row('SELECT * FROM services WHERE id = ?', [(int) $editItem['service_id']])
+            : null;
+        $tab = service_category_for($itemService ?? $editItem);
+    }
 }
+
+$tabLabel = service_category_label($tab);
+$tabIntro = [
+    'piece' => 'Items billed per piece, such as shirts, trousers and sarees.',
+    'kg' => 'Items billed by weight. The pickup boy verifies the actual kg.',
+    'extra' => 'Add-ons billed per unit, such as express delivery, stain removal or extra detergent.',
+][$tab];
+$tabServices = $servicesByCategory[$tab] ?? [];
+$tabItems = $itemsByCategory[$tab] ?? [];
 
 layout_start('Services & Items', 'app');
 ?>
@@ -150,44 +198,53 @@ layout_start('Services & Items', 'app');
     <div class="alert alert-error"><?= e($error) ?></div>
 <?php endforeach; ?>
 
+<nav class="tabs" aria-label="Catalogue type">
+    <?php foreach ($categories as $key => $label): ?>
+        <a class="<?= $key === $tab ? 'active' : '' ?>" href="<?= e(url('admin/catalog.php?tab=' . urlencode($key))) ?>">
+            <?= e($label) ?>
+            <span class="badge badge-muted"><?= e((string) count($servicesByCategory[$key] ?? [])) ?></span>
+        </a>
+    <?php endforeach; ?>
+</nav>
+<p class="subtle" style="margin-top:-.6rem;"><?= e($tabIntro) ?></p>
+
 <div class="panel">
     <div class="panel-head">
-        <h2><?= $editService !== null ? 'Edit Service' : 'Add Service' ?></h2>
+        <h2><?= $editService !== null ? 'Edit ' . e($tabLabel) . ' Service' : 'Add ' . e($tabLabel) . ' Service' ?></h2>
         <?php if ($editService !== null): ?>
-            <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php')) ?>">Cancel edit</a>
+            <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?tab=' . urlencode($tab))) ?>">Cancel edit</a>
         <?php endif; ?>
     </div>
     <div class="panel-body">
         <form method="post" action="<?= e(url('admin/catalog.php')) ?>">
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="save_service">
+            <input type="hidden" name="tab" value="<?= e($tab) ?>">
+            <input type="hidden" name="category" value="<?= e($tab) ?>">
             <input type="hidden" name="service_id" value="<?= e((string) ($editService['id'] ?? 0)) ?>">
             <div class="form-grid">
                 <div class="form-group">
                     <label for="service_name" class="required">Service name</label>
-                    <input type="text" id="service_name" name="service_name" value="<?= e((string) ($editService['service_name'] ?? '')) ?>" placeholder="e.g. Wash & Fold, Premium Dry Clean" required>
-                    <p class="subtle">A descriptive name for your service (e.g., "Standard Wash & Fold", "Premium Dry Clean")</p>
+                    <input type="text" id="service_name" name="service_name" value="<?= e((string) ($editService['service_name'] ?? '')) ?>"
+                           placeholder="<?= e($tab === 'kg' ? 'e.g. Wash & Fold (kg)' : ($tab === 'extra' ? 'e.g. Express & Add-ons' : 'e.g. Wash & Iron')) ?>" required>
+                    <p class="subtle">Shown to customers and staff when they add an item.</p>
                 </div>
                 <div class="form-group">
-                    <label for="price_mode" class="required">Billed by</label>
-                    <select name="price_mode" id="price_mode">
-                        <?php foreach (service_modes() as $key => $label): ?>
-                            <option value="<?= e($key) ?>"<?= ($editService['price_mode'] ?? 'per_piece') === $key ? ' selected' : '' ?>><?= e($label) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <p class="subtle">Choose how this service will be billed - per piece or per kilogram</p>
+                    <label class="required">Billed by</label>
+                    <input type="text" value="<?= e($tab === 'kg' ? 'Per kg' : 'Per piece') ?>" readonly>
+                    <p class="subtle"><?= $tab === 'kg' ? 'Weight is entered at booking and verified at pickup.' : ($tab === 'extra' ? 'Extras are charged as quantity x rate.' : 'Charged as quantity x rate.') ?></p>
                 </div>
                 <div class="form-group">
                     <label for="rate" class="required">Rate (<?= e(APP_CURRENCY) ?>)</label>
                     <input type="number" id="rate" name="rate" min="0.01" step="0.01" value="<?= e((string) ($editService['rate'] ?? '0')) ?>" required>
-                    <p class="subtle">Base rate for this service. For per-kg services, this is the rate per kilogram.</p>
+                    <p class="subtle">Base rate for this service<?= $tab === 'kg' ? ' per kilogram' : ' per piece' ?>.</p>
                 </div>
-                <?php if (($editService['price_mode'] ?? 'per_piece') === 'per_kg'): ?>
-                <div class="form-group">
-                    <label for="min_weight_kg">Minimum weight (kg)</label>
-                    <input type="number" id="min_weight_kg" name="min_weight_kg" min="0" step="0.5" value="<?= e((string) ($editService['min_weight_kg'] ?? '0')) ?>">
-                    <p class="subtle">Minimum weight required for this service. Orders below this weight will be charged for the minimum.</p>
-                </div>
+                <?php if ($tab === 'kg'): ?>
+                    <div class="form-group">
+                        <label for="min_weight_kg">Minimum weight (kg)</label>
+                        <input type="number" id="min_weight_kg" name="min_weight_kg" min="0" step="0.5" value="<?= e((string) ($editService['min_weight_kg'] ?? '0')) ?>">
+                        <p class="subtle">Orders below this weight are charged for the minimum.</p>
+                    </div>
                 <?php endif; ?>
                 <div class="form-group">
                     <label for="service_active">Status</label>
@@ -195,7 +252,7 @@ layout_start('Services & Items', 'app');
                         <option value="1"<?= (int) ($editService['is_active'] ?? 1) === 1 ? ' selected' : '' ?>>Active</option>
                         <option value="0"<?= $editService !== null && (int) $editService['is_active'] === 0 ? ' selected' : '' ?>>Inactive</option>
                     </select>
-                    <p class="subtle">Inactive services will not appear in customer or staff interfaces</p>
+                    <p class="subtle">Inactive services will not appear in customer or staff interfaces.</p>
                 </div>
             </div>
             <div class="form-actions">
@@ -206,10 +263,10 @@ layout_start('Services & Items', 'app');
 </div>
 
 <div class="panel">
-    <div class="panel-head"><h2>Services</h2><span class="subtle"><?= e((string) count($services)) ?> services</span></div>
+    <div class="panel-head"><h2><?= e($tabLabel) ?> Services</h2><span class="subtle"><?= e((string) count($tabServices)) ?> services</span></div>
     <div class="panel-body tight">
-        <?php if ($services === []): ?>
-            <div class="empty-state"><strong>No services yet</strong>Create a service above, then map items to it.</div>
+        <?php if ($tabServices === []): ?>
+            <div class="empty-state"><strong>No <?= e(strtolower($tabLabel)) ?> services yet</strong>Create one above, then map items to it.</div>
         <?php else: ?>
             <div class="table-wrap">
                 <table class="data">
@@ -223,17 +280,18 @@ layout_start('Services & Items', 'app');
                         </tr>
                     </thead>
                     <tbody>
-                    <?php foreach ($services as $service): ?>
+                    <?php foreach ($tabServices as $service): ?>
                         <tr>
                             <td><strong><?= e((string) $service['service_name']) ?></strong></td>
                             <td><?= e(service_mode_label((string) $service['price_mode'])) ?></td>
                             <td class="num"><?= e(money((float) $service['rate'])) ?><?= $service['price_mode'] === 'per_kg' ? ' / kg' : ' / pc' ?></td>
                             <td><span class="badge <?= (int) $service['is_active'] === 1 ? 'badge-success' : 'badge-muted' ?>"><?= (int) $service['is_active'] === 1 ? 'Active' : 'Inactive' ?></span></td>
                             <td class="actions">
-                                <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?edit_service=' . (int) $service['id'])) ?>">Edit</a>
+                                <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?tab=' . urlencode($tab) . '&edit_service=' . (int) $service['id'])) ?>">Edit</a>
                                 <form method="post" style="display:inline;">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="toggle_service">
+                                    <input type="hidden" name="tab" value="<?= e($tab) ?>">
                                     <input type="hidden" name="service_id" value="<?= e((string) $service['id']) ?>">
                                     <button class="btn btn-sm btn-ghost" type="submit"><?= (int) $service['is_active'] === 1 ? 'Disable' : 'Enable' ?></button>
                                 </form>
@@ -249,18 +307,19 @@ layout_start('Services & Items', 'app');
 
 <div class="panel">
     <div class="panel-head">
-        <h2><?= $editItem !== null ? 'Edit Item' : 'Add Item' ?></h2>
+        <h2><?= $editItem !== null ? 'Edit ' . e($tabLabel) . ' Item' : 'Add ' . e($tabLabel) . ' Item' ?></h2>
         <?php if ($editItem !== null): ?>
-            <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php')) ?>">Cancel edit</a>
+            <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?tab=' . urlencode($tab))) ?>">Cancel edit</a>
         <?php endif; ?>
     </div>
     <div class="panel-body">
-        <?php if ($services === []): ?>
-            <div class="empty-state"><strong>Add a service first</strong>Every item belongs to a service.</div>
+        <?php if ($tabServices === []): ?>
+            <div class="empty-state"><strong>Add a service first</strong>Every item belongs to a service in this tab.</div>
         <?php else: ?>
             <form method="post" action="<?= e(url('admin/catalog.php')) ?>">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="save_item">
+                <input type="hidden" name="tab" value="<?= e($tab) ?>">
                 <input type="hidden" name="item_id" value="<?= e((string) ($editItem['id'] ?? 0)) ?>">
                 <div class="form-grid">
                     <div class="form-group">
@@ -270,7 +329,7 @@ layout_start('Services & Items', 'app');
                     <div class="form-group">
                         <label for="service_id" class="required">Service</label>
                         <select name="service_id" id="service_id">
-                            <?php foreach ($services as $service): ?>
+                            <?php foreach ($tabServices as $service): ?>
                                 <option value="<?= (int) $service['id'] ?>"<?= (int) ($editItem['service_id'] ?? 0) === (int) $service['id'] ? ' selected' : '' ?>>
                                     <?= e((string) $service['service_name']) ?> (<?= e(service_mode_label((string) $service['price_mode'])) ?>)
                                 </option>
@@ -278,7 +337,7 @@ layout_start('Services & Items', 'app');
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="rate_override">Rate override (<?= e(APP_CURRENCY) ?>)</label>
+                        <label for="rate_override"><?= $tab === 'extra' ? 'Price' : 'Rate override' ?> (<?= e(APP_CURRENCY) ?>)</label>
                         <input type="number" id="rate_override" name="rate_override" min="0" step="0.01" value="<?= e((string) ($editItem !== null ? service_effective_rate(['price_mode' => $editItem['price_mode'], 'rate' => 0], $editItem) : '0')) ?>">
                         <span class="subtle">Leave 0 to use the service rate.</span>
                     </div>
@@ -299,10 +358,10 @@ layout_start('Services & Items', 'app');
 </div>
 
 <div class="panel">
-    <div class="panel-head"><h2>Items</h2><span class="subtle"><?= e((string) count($items)) ?> items</span></div>
+    <div class="panel-head"><h2><?= e($tabLabel) ?> Items</h2><span class="subtle"><?= e((string) count($tabItems)) ?> items</span></div>
     <div class="panel-body tight">
-        <?php if ($items === []): ?>
-            <div class="empty-state"><strong>No items yet</strong>Add items and map them to a service.</div>
+        <?php if ($tabItems === []): ?>
+            <div class="empty-state"><strong>No items in this tab yet</strong>Add items and map them to a service.</div>
         <?php else: ?>
             <div class="table-wrap">
                 <table class="data">
@@ -317,7 +376,7 @@ layout_start('Services & Items', 'app');
                         </tr>
                     </thead>
                     <tbody>
-                    <?php foreach ($items as $item): ?>
+                    <?php foreach ($tabItems as $item): ?>
                         <?php
                         $serviceRow = [
                             'price_mode' => (string) ($item['service_price_mode'] ?? $item['price_mode']),
@@ -332,10 +391,11 @@ layout_start('Services & Items', 'app');
                             <td class="num"><?= e(money($rate)) ?><?= ($item['service_price_mode'] ?? $item['price_mode']) === 'per_kg' ? ' / kg' : ' / pc' ?></td>
                             <td><span class="badge <?= (int) $item['is_active'] === 1 ? 'badge-success' : 'badge-muted' ?>"><?= (int) $item['is_active'] === 1 ? 'Active' : 'Inactive' ?></span></td>
                             <td class="actions">
-                                <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?edit=' . (int) $item['id'])) ?>">Edit</a>
+                                <a class="btn btn-sm btn-ghost" href="<?= e(url('admin/catalog.php?tab=' . urlencode($tab) . '&edit=' . (int) $item['id'])) ?>">Edit</a>
                                 <form method="post" style="display:inline;">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="toggle_item">
+                                    <input type="hidden" name="tab" value="<?= e($tab) ?>">
                                     <input type="hidden" name="item_id" value="<?= e((string) $item['id']) ?>">
                                     <button class="btn btn-sm btn-ghost" type="submit"><?= (int) $item['is_active'] === 1 ? 'Disable' : 'Enable' ?></button>
                                 </form>

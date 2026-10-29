@@ -58,22 +58,24 @@ $delivery2Id = seed_user('staff', 'Anita Desai', '9000000006', 'anita@laundryfri
 
 echo "Users ready.\n";
 
+ensure_service_category_schema();
 $services = [
-    ['Wash & Iron', 'per_piece', 15],
-    ['Wash & Fold', 'per_piece', 10],
-    ['Wash & Fold (kg)', 'per_kg', 60],
-    ['Dry Clean', 'per_piece', 90],
-    ['Shoe Cleaning', 'per_piece', 200],
+    ['Wash & Iron', 'piece', 'per_piece', 15],
+    ['Wash & Fold', 'piece', 'per_piece', 10],
+    ['Wash & Fold (kg)', 'kg', 'per_kg', 60],
+    ['Dry Clean', 'piece', 'per_piece', 90],
+    ['Shoe Cleaning', 'piece', 'per_piece', 200],
+    ['Express & Add-ons', 'extra', 'per_piece', 50],
 ];
 
 $serviceIds = [];
-foreach ($services as [$serviceName, $mode, $rate]) {
+foreach ($services as [$serviceName, $category, $mode, $rate]) {
     $existing = db_row('SELECT id FROM services WHERE service_name = ?', [$serviceName]);
     $serviceIds[$serviceName] = $existing !== null
         ? (int) $existing['id']
         : db_insert(
-            'INSERT INTO services (service_name, price_mode, rate, is_active) VALUES (?, ?, ?, 1)',
-            [$serviceName, $mode, $rate]
+            'INSERT INTO services (service_name, price_mode, category, rate, is_active) VALUES (?, ?, ?, ?, 1)',
+            [$serviceName, $mode, $category, $rate]
         );
 }
 
@@ -90,6 +92,9 @@ $catalog = [
     ['Dress / Saree', 'Dry Clean', 'dry_clean', 'per_piece', 90, 0],
     ['Suit / Blazer', 'Dry Clean', 'dry_clean', 'per_piece', 120, 0],
     ['Sneakers', 'Shoe Cleaning', 'shoe_clean', 'per_piece', 200, 0],
+    ['Express Delivery', 'Express & Add-ons', 'other', 'per_piece', 50, 0],
+    ['Stain Removal', 'Express & Add-ons', 'other', 'per_piece', 30, 0],
+    ['Extra Detergent', 'Express & Add-ons', 'other', 'per_piece', 20, 0],
 ];
 
 foreach ($catalog as [$name, $serviceName, $serviceType, $mode, $perPiece, $perKg]) {

@@ -388,6 +388,32 @@ input[type=checkbox] { width: auto; }
     color: #dc3545;
 }
 
+/* Item type tabs (piece / kg / extra) */
+.item-tabs {
+    display: flex;
+    gap: .3rem;
+    background: #f2f5fa;
+    padding: .3rem;
+    border-radius: 10px;
+}
+.item-tab {
+    flex: 1;
+    padding: .5rem .55rem;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: .86rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.item-tab.active {
+    background: #fff;
+    color: var(--brand-dark);
+    box-shadow: 0 1px 3px rgba(16,24,40,.12);
+}
+
 /* Selection mode toggle */
 .selection-mode-toggle {
     display: flex;

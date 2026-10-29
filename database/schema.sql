@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS services (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   service_name VARCHAR(120) NOT NULL,
   price_mode ENUM('per_piece','per_kg') NOT NULL DEFAULT 'per_piece',
+  category ENUM('piece','kg','extra') NOT NULL DEFAULT 'piece',
   rate DECIMAL(12,2) NOT NULL DEFAULT 0,
   min_weight_kg DECIMAL(10,3) NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
