@@ -57,6 +57,21 @@ function order_item_amount(array $item): float
 }
 
 /**
+ * True while at least one per-kg line still carries an unverified estimate.
+ * Screens use this to label the bill "Estimated" instead of "Final".
+ */
+function order_weight_estimated(array $items): bool
+{
+    foreach ($items as $item) {
+        if ((string) ($item['price_mode'] ?? '') === 'per_kg'
+            && (int) ($item['weight_verified'] ?? 0) !== 1) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Details of a rate override on an invoice line, or null when the catalog rate
  * was used. Used by the order screens to show the old rate, who changed it and why.
  */

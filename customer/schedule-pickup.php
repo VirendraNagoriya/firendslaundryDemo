@@ -46,6 +46,7 @@ if ($customer !== null) {
 }
 
 $errors = [];
+$items = [];
 $form = [
     'name' => (string) ($customer['name'] ?? ($loggedIn['name'] ?? '')),
     'phone' => (string) ($customer['phone'] ?? ($loggedIn['phone'] ?? '')),
@@ -177,7 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_id'] = $result['user_id'];
         }
         flash('success', 'Pickup scheduled. Our team will call you to confirm.');
-        redirect('customer/order-view.php?id=' . $result['order_id']);
+        redirect('customer/order-view.php?id=' . $result['order_id'] . '&new=1');
     }
 }
 
@@ -264,7 +265,7 @@ layout_start('Schedule a Pickup', 'customer');
 
             <h3 class="mt-1">3. Items to be washed</h3>
             <p class="subtle">Tap a service to add it, then set how many pieces or how many kilos. Our team confirms the final weight at pickup.</p>
-            <?php render_item_picker([], $catalog, ['intro' => 'Tap + Add item and choose a service. Weight is an estimate - the pickup boy measures and verifies the actual kg.']); ?>
+            <?php render_item_picker($items, $catalog, ['draft_key' => 'customer-booking', 'intro' => 'Tap + Add item and choose a service. Weight is an estimate - the pickup boy measures and verifies the actual kg.']); ?>
 
             <div class="form-grid mt-1">
                 <div class="form-group">

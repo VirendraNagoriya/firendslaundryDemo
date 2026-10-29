@@ -187,6 +187,7 @@
 
         function refresh() {
             recalc(picker);
+            saveDraft();
         }
 
         function catalogForService(serviceId) {
@@ -853,9 +854,126 @@
             applyService(row, mode, 0, false);
         });
 
+        /* ---------- Draft autosave (customer booking / new order) ---------- */
+        var draftKey = picker.getAttribute('data-draft-key') || '';
+        var restoringDraft = false;
+
+        function draftStorageKey() {
+            return 'lf-item-draft:' + window.location.pathname + ':' + draftKey;
+        }
+
+        function draftEntries() {
+            var entries = [];
+            if (!list) { return entries; }
+            list.querySelectorAll('[data-item-row]').forEach(function (row) {
+                var nameInput = row.querySelector('[name="item_name[]"]');
+                var name = nameInput ? nameInput.value.trim() : '';
+                if (name === '') { return; }
+                var select = row.querySelector('[data-service-select]');
+                var qty = row.querySelector('[name="item_qty[]"]');
+                var weight = row.querySelector('[name="item_weight[]"]');
+                var rate = row.querySelector('[data-rate-input]');
+                var reason = row.querySelector('[data-rate-reason]');
+                var notes = row.querySelector('[name="item_notes[]"]');
+                entries.push({
+                    name: name,
+                    service_id: select ? select.value : '',
+                    mode: row.getAttribute('data-service-mode') === 'per_kg' ? 'per_kg' : 'per_piece',
+                    qty: qty ? qty.value : 1,
+                    weight: weight ? weight.value : 0,
+                    rate: rate ? rate.value : 0,
+                    catalog_rate: row.getAttribute('data-catalog-rate') || 0,
+                    min_weight: row.getAttribute('data-min-weight') || 0,
+                    reason: reason ? reason.value : '',
+                    notes: notes ? notes.value : ''
+                });
+            });
+            return entries;
+        }
+
+        function saveDraft() {
+            if (!draftKey || restoringDraft) { return; }
+            try {
+                window.localStorage.setItem(draftStorageKey(), JSON.stringify({
+                    at: Date.now(),
+                    items: draftEntries()
+                }));
+            } catch (err) { /* private mode / quota - drafts are optional */ }
+        }
+
+        function clearDraft() {
+            if (!draftKey) { return; }
+            try { window.localStorage.removeItem(draftStorageKey()); } catch (err) {}
+        }
+
+        function showDraftNotice(count) {
+            if (!list) { return; }
+            if (list.previousElementSibling && list.previousElementSibling.hasAttribute('data-draft-notice')) {
+                return;
+            }
+            var notice = document.createElement('div');
+            notice.className = 'draft-notice';
+            notice.setAttribute('data-draft-notice', '');
+            var text = document.createElement('span');
+            text.textContent = 'Restored ' + count + ' item(s) from your last visit.';
+            var fresh = document.createElement('button');
+            fresh.type = 'button';
+            fresh.className = 'btn btn-sm btn-ghost';
+            fresh.textContent = 'Start fresh';
+            fresh.addEventListener('click', function () {
+                clearDraft();
+                window.location.reload();
+            });
+            notice.appendChild(text);
+            notice.appendChild(fresh);
+            list.parentNode.insertBefore(notice, list);
+        }
+
+        function restoreDraft() {
+            if (!draftKey) { return; }
+            var raw = null;
+            try { raw = window.localStorage.getItem(draftStorageKey()); } catch (err) { return; }
+            if (!raw) { return; }
+            var data = null;
+            try { data = JSON.parse(raw); } catch (err) { clearDraft(); return; }
+            if (!data || !data.items || !data.items.length || !data.at) { return; }
+            if (Date.now() - Number(data.at) > 24 * 60 * 60 * 1000) {
+                clearDraft();
+                return;
+            }
+            restoringDraft = true;
+            var restored = 0;
+            data.items.forEach(function (entry) {
+                if (!entry || !entry.name) { return; }
+                var card = addCard({
+                    name: entry.name,
+                    service_id: entry.service_id,
+                    mode: entry.mode,
+                    qty: entry.qty,
+                    weight: entry.weight,
+                    rate: entry.rate,
+                    catalog_rate: entry.catalog_rate,
+                    min_weight: entry.min_weight,
+                    reason: entry.reason
+                });
+                if (card) {
+                    var notes = card.querySelector('[name="item_notes[]"]');
+                    if (notes && entry.notes) { notes.value = entry.notes; }
+                    restored++;
+                }
+            });
+            restoringDraft = false;
+            if (restored > 0) { showDraftNotice(restored); }
+        }
+
+        restoreDraft();
+
         recalc(picker);
         var hostForm = picker.closest('form');
-        if (hostForm) { recalc(hostForm); }
+        if (hostForm) {
+            recalc(hostForm);
+            hostForm.addEventListener('submit', clearDraft);
+        }
     });
 
     var buttons = document.querySelectorAll('[data-confirm]');

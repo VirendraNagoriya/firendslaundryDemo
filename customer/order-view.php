@@ -22,6 +22,24 @@ $due = (float) $order['total_amount'] - (float) $order['paid_amount'];
 
 layout_start('Order ' . $order['order_number'], 'customer');
 ?>
+<?php if (query('new') === '1'): ?>
+    <div class="panel success-panel">
+        <div class="panel-body">
+            <div class="success-mark" aria-hidden="true">&#10003;</div>
+            <h2>Pickup scheduled!</h2>
+            <p class="subtle">Order <?= e($order['order_number']) ?> is with us. Keep this page bookmarked to track it.</p>
+            <ol class="next-steps">
+                <li><strong>We pick up</strong><span>Our pickup boy collects the clothes and weighs kg items.</span></li>
+                <li><strong>We wash &amp; fold</strong><span>You get a WhatsApp update at every stage.</span></li>
+                <li><strong>We deliver</strong><span>Pay the balance in cash, UPI or card at delivery.</span></li>
+            </ol>
+            <div class="form-actions">
+                <a class="btn btn-primary" href="<?= e(url('customer/orders.php')) ?>">View my orders</a>
+                <a class="btn btn-ghost" href="<?= e(url('customer/schedule-pickup.php')) ?>">Schedule another</a>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
 <div class="detail-grid">
     <div>
         <div class="panel">
@@ -87,7 +105,9 @@ layout_start('Order ' . $order['order_number'], 'customer');
                     <?php if ((float) $order['tax_amount'] > 0): ?>
                         <div class="total-row"><span>Tax</span><span><?= e(money((float) $order['tax_amount'])) ?></span></div>
                     <?php endif; ?>
-                    <div class="total-row grand"><span>Total</span><span><?= e(money((float) $order['total_amount'])) ?></span></div>
+                    <div class="total-row grand"><span>Total
+                        <span class="badge <?= $hasEstimate ? 'badge-warn' : 'badge-success' ?>"><?= $hasEstimate ? 'Estimated' : 'Final' ?></span>
+                    </span><span><?= e(money((float) $order['total_amount'])) ?></span></div>
                     <div class="total-row"><span>Paid</span><span><?= e(money((float) $order['paid_amount'])) ?></span></div>
                     <div class="total-row"><strong>Amount due</strong><strong><?= e(money($due)) ?></strong></div>
                 </div>

@@ -102,6 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $items = db_all('SELECT * FROM order_items WHERE order_id = ? ORDER BY id', [$orderId]);
+$billEstimated = order_weight_estimated($items);
 $history = db_all('SELECT * FROM order_status_history WHERE order_id = ? ORDER BY id DESC', [$orderId]);
 $payments = db_all('SELECT * FROM payments WHERE order_id = ? ORDER BY id DESC', [$orderId]);
 $customer = db_row('SELECT * FROM customers WHERE id = ?', [(int) $order['customer_id']]);
@@ -189,7 +190,9 @@ layout_start('Order ' . $order['order_number'], 'app');
                     <div class="total-row"><span>Discount</span><span>- <?= e(money((float) $order['discount_amount'])) ?></span></div>
                     <div class="total-row"><span>Delivery charge</span><span><?= e(money((float) $order['delivery_charge'])) ?></span></div>
                     <div class="total-row"><span>Tax</span><span><?= e(money((float) $order['tax_amount'])) ?></span></div>
-                    <div class="total-row grand"><span>Total</span><span><?= e(money((float) $order['total_amount'])) ?></span></div>
+                    <div class="total-row grand"><span>Total
+                        <span class="badge <?= $billEstimated ? 'badge-warn' : 'badge-success' ?>"><?= $billEstimated ? 'Estimated' : 'Final' ?></span>
+                    </span><span><?= e(money((float) $order['total_amount'])) ?></span></div>
                     <div class="total-row"><span>Paid</span><span><?= e(money((float) $order['paid_amount'])) ?></span></div>
                     <div class="total-row"><strong>Balance due</strong><strong><?= e(money($due)) ?></strong></div>
                 </div>

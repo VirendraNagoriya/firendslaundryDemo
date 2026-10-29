@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
 require_once dirname(__DIR__) . '/includes/order-items.php';
 require_once dirname(__DIR__) . '/includes/order-tiles.php';
+require_once dirname(__DIR__) . '/includes/whatsapp.php';
 
 $user = require_roles(staff_roles());
 $staffId = (int) $user['id'];
@@ -219,6 +220,8 @@ layout_start('Pickup Queue', 'app');
                 if ($mapUrl !== '') {
                     $actions .= '<a class="btn btn-sm btn-ghost" href="' . e($mapUrl) . '" target="_blank" rel="noopener">Navigate</a>';
                 }
+                $waEvent = in_array($order['status'], ['new', 'pickup_assigned'], true) ? 'accepted' : 'picked_up';
+                $actions .= whatsapp_button($order, $waEvent, 'WhatsApp update');
 
                 if ($locked) {
                     $actions .= '<span class="subtle">' . ($closed ? 'Delivered and paid - items are locked' : 'Items are locked after delivery') . '</span>';

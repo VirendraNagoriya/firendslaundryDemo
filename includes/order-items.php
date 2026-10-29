@@ -293,7 +293,7 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
             . ($serviceChips === '' ? ' checked' : '') . '><span>' . e((string) $service['service_name']) . '</span></label>';
     }
     ?>
-    <div class="item-picker" data-item-picker data-currency="<?= e(APP_CURRENCY) ?>">
+    <div class="item-picker" data-item-picker data-currency="<?= e(APP_CURRENCY) ?>"<?= !empty($options['draft_key']) ? ' data-draft-key="' . e((string) $options['draft_key']) . '"' : '' ?>>
         <?php if (!empty($options['intro'])): ?>
             <p class="subtle item-picker-intro"><?= e((string) $options['intro']) ?></p>
         <?php endif; ?>

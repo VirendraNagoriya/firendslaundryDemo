@@ -5,6 +5,7 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/layout.php';
 require_once dirname(__DIR__) . '/includes/orders.php';
 require_once dirname(__DIR__) . '/includes/order-tiles.php';
+require_once dirname(__DIR__) . '/includes/whatsapp.php';
 
 $user = require_roles(staff_roles());
 $staffId = (int) $user['id'];
@@ -240,6 +241,11 @@ layout_start('Delivery Queue', 'app');
                 if ($mapUrl !== '') {
                     $actions .= '<a class="btn btn-sm btn-ghost" href="' . e($mapUrl) . '" target="_blank" rel="noopener">Navigate</a>';
                 }
+                $actions .= whatsapp_button(
+                    $order,
+                    $order['status'] === 'ready_for_delivery' ? 'out_for_delivery' : 'delivered',
+                    'WhatsApp update'
+                );
 
                 if ($order['status'] === 'ready_for_delivery') {
                     $actions .= '<form method="post">'
@@ -300,6 +306,7 @@ layout_start('Delivery Queue', 'app');
                     . ' · ' . order_items_summary((int) $order['id'])
                     . ' · ' . ($closed ? 'Closed (delivered & paid)' : 'Payment pending');
                 $actions = '<a class="btn btn-sm btn-ghost" href="' . e(url('staff/pos.php?order_id=' . (int) $order['id'])) . '">View items</a>';
+                $actions .= whatsapp_button($order, 'delivered', 'WhatsApp update');
                 if ($due > 0.005 && !$closed) {
                     $actions .= '<form method="post">'
                         . csrf_field()

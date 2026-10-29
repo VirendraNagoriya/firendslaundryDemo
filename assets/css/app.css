@@ -856,3 +856,13 @@ body.sheet-open { overflow: hidden; }
 .wa-send-list { display: grid; gap: .45rem; margin-top: .5rem; }
 .wa-send-list .btn { justify-content: flex-start; text-align: left; }
 .item-picker-total .badge { font-size: .62rem; vertical-align: middle; margin-right: .15rem; }
+
+/* Booking success + next steps */
+.success-panel { border-color: #bfe3c9; background: #f7fdf9; }
+.success-mark { width: 44px; height: 44px; border-radius: 50%; background: #d9f3e1; color: #1c7a43; display: grid; place-items: center; font-size: 1.4rem; font-weight: 700; margin-bottom: .5rem; }
+.next-steps { list-style: none; counter-reset: step; display: grid; gap: .65rem; padding: 0; margin: 1rem 0; }
+.next-steps li { position: relative; padding-left: 2.3rem; }
+.next-steps li::before { counter-increment: step; content: counter(step); position: absolute; left: 0; top: .1rem; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: #e8f0ff; color: var(--brand-dark); display: grid; place-items: center; font-size: .8rem; font-weight: 700; }
+.next-steps strong { display: block; font-size: .92rem; }
+.next-steps span { color: var(--ink-soft); font-size: .84rem; }
+.draft-notice { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; margin: .4rem 0 .6rem; padding: .55rem .75rem; border-radius: 10px; background: #eef4ff; border: 1px solid #cfe0ff; color: var(--brand-dark); font-size: .84rem; }
