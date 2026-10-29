@@ -1173,7 +1173,14 @@ table.data tbody tr:last-child td { border-bottom: 0; }
     .pos-filters .sheet-section { flex: 0 0 auto; margin: 0; }
     .pos-filters .item-tabs,
     .pos-filters .chip-group { flex-wrap: nowrap; }
-    .pos-articles { max-height: none; flex: 1; overflow-y: auto; }
+    .pos-filters [data-chip-group],
+    .pos-filters [data-tab-empty],
+    .pos-details [data-remark],
+    .pos-details .sheet-field:has([data-remark]) {
+        display: none;
+    }
+    .quick-picks { grid-template-columns: repeat(2, 1fr); }
+    .sheet-search { padding: .5rem .75rem 0; }
     .pos-details {
         border-left: 0;
         border-top: 1px solid var(--line);
