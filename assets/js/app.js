@@ -210,9 +210,12 @@
 
         function selectedSubcategory() {
             var chip = sheet ? sheet.querySelector('input[name="sheet_subcategory_id"]:checked') : null;
+            console.log("Selected subcategory chip:", chip);
             if (!chip || String(chip.value) === '0') { return { id: '0', name: '' }; }
             var label = chip.parentNode ? chip.parentNode.querySelector('span') : null;
-            return { id: String(chip.value), name: label ? label.textContent.trim() : '' };
+            var result = { id: String(chip.value), name: label ? label.textContent.trim() : '' };
+            console.log("Selected subcategory:", result);
+            return result;
         }
 
         function selectedSubcategoryId() {
@@ -329,6 +332,8 @@
             var kgNote = sheet.querySelector('[data-kg-note]');
             var rateInput = sheetRateInput();
             var subcategoryId = selectedSubcategoryId();
+            
+            console.log("Syncing sheet service with subcategory:", subcategoryId);
 
             // Hide services that have no article in the selected subcategory.
             var visibleServices = [];
@@ -341,15 +346,31 @@
                     }
                 });
                 var label = svc.closest('label');
-                if (label) { label.hidden = !hasItem; }
+                if (label) { 
+                    label.hidden = !hasItem;
+                    // Ensure service labels are clickable
+                    label.style.pointerEvents = 'auto';
+                    label.style.cursor = 'pointer';
+                }
                 if (hasItem) { visibleServices.push(svc); }
             });
 
             // Auto-select a service that actually has items for this subcategory.
             var checked = sheet.querySelector('input[name="sheet_service_id"]:checked');
+            console.log("Currently checked service:", checked);
             if (!checked || (checked.closest('label') && checked.closest('label').hidden)) {
                 var firstVisible = visibleServices[0];
-                if (firstVisible) { firstVisible.checked = true; }
+                console.log("First visible service:", firstVisible);
+                if (firstVisible) { 
+                    firstVisible.checked = true;
+                    // Ensure the service is properly visible
+                    var label = firstVisible.closest('label');
+                    if (label) {
+                        label.style.pointerEvents = 'auto';
+                        label.style.cursor = 'pointer';
+                        label.hidden = false;
+                    }
+                }
             }
 
             var chip = sheet.querySelector('input[name="sheet_service_id"]:checked');
@@ -375,16 +396,35 @@
 
             var visible = 0;
             var term = sheetSearchTerm();
+            console.log("Filtering items with serviceId:", serviceId, "subcategoryId:", subcategoryId, "term:", term);
+            
+            // Reset all buttons to visible first
             picker.querySelectorAll('[data-quick-item]').forEach(function (button) {
-                var match = String(button.getAttribute('data-service-id')) === String(serviceId)
-                    && (subcategoryId === '0' || String(button.getAttribute('data-subcategory-id')) === subcategoryId);
+                button.style.display = 'block';
+            });
+            
+            // Apply filters
+            picker.querySelectorAll('[data-quick-item]').forEach(function (button) {
+                var serviceMatch = String(button.getAttribute('data-service-id')) === String(serviceId);
+                var subcategoryMatch = (subcategoryId === '0' || String(button.getAttribute('data-subcategory-id')) === subcategoryId);
+                var match = serviceMatch && subcategoryMatch;
+                
                 if (match && term !== '') {
                     var name = (button.textContent || '').toLowerCase();
                     match = name.indexOf(term) >= 0;
                 }
-                button.hidden = !match;
-                if (match) { visible++; }
+                
+                // Hide non-matching items
+                if (!match) {
+                    button.style.display = 'none';
+                } else {
+                    visible++;
+                    // Ensure matching items are clickable
+                    button.style.pointerEvents = 'auto';
+                    button.style.cursor = 'pointer';
+                }
             });
+            
             var empty = picker.querySelector('[data-quick-empty]');
             if (empty) { empty.hidden = visible > 0; }
 
@@ -633,16 +673,28 @@
         function activateSheetTab(category) {
             if (!sheet) { return; }
             var wanted = category || 'piece';
+            console.log("Activating tab:", wanted);
+            
+            // Update all tabs
             sheet.querySelectorAll('[data-item-tab]').forEach(function (tab) {
                 var active = tab.getAttribute('data-item-tab') === wanted;
                 tab.classList.toggle('active', active);
                 tab.setAttribute('aria-selected', active ? 'true' : 'false');
+                
+                // Ensure tab is clickable
+                tab.style.pointerEvents = 'auto';
+                tab.style.cursor = 'pointer';
             });
 
+            // Update bottom tabs if they exist
             sheet.querySelectorAll('[data-item-tab-bottom]').forEach(function (tab) {
                 var active = tab.getAttribute('data-item-tab-bottom') === wanted;
                 tab.classList.toggle('active', active);
                 tab.setAttribute('aria-selected', active ? 'true' : 'false');
+                
+                // Ensure tab is clickable
+                tab.style.pointerEvents = 'auto';
+                tab.style.cursor = 'pointer';
             });
 
             var activeGroup = null;
@@ -651,6 +703,14 @@
                 group.hidden = !show;
                 if (show) { activeGroup = group; }
             });
+
+            // Ensure service chips are visible and clickable
+            if (activeGroup) {
+                activeGroup.querySelectorAll('input[name="sheet_service_id"]').forEach(function(chip) {
+                    chip.style.pointerEvents = 'auto';
+                    chip.style.cursor = 'pointer';
+                });
+            }
 
             var chip = activeGroup ? activeGroup.querySelector('input[name="sheet_service_id"]') : null;
             var checked = sheet.querySelector('input[name="sheet_service_id"]:checked');
@@ -713,7 +773,16 @@
             var bottomTab = event.target.closest('[data-item-tab-bottom]');
             if (bottomTab) {
                 event.preventDefault();
-                activateSheetTab(bottomTab.getAttribute('data-item-tab-bottom'));
+                var tabValue = bottomTab.getAttribute('data-item-tab-bottom');
+                console.log("Bottom tab clicked:", tabValue);
+                
+                // Ensure the tab is properly activated
+                bottomTab.style.pointerEvents = 'auto';
+                bottomTab.style.cursor = 'pointer';
+                
+                // Activate the tab
+                activateSheetTab(tabValue);
+                return;
             }
         });
 
@@ -879,6 +948,24 @@
         }
 
         picker.addEventListener('click', function (event) {
+            // Check for tab clicks first
+            var topTab = event.target.closest('[data-item-tab]');
+            if (topTab) {
+                event.preventDefault();
+                var tabValue = topTab.getAttribute('data-item-tab');
+                console.log("Top tab clicked:", tabValue);
+                
+                // Ensure the tab is properly activated
+                topTab.style.pointerEvents = 'auto';
+                topTab.style.cursor = 'pointer';
+                
+                // Activate the tab
+                if (sheet) {
+                    activateSheetTab(tabValue);
+                }
+                return;
+            }
+            
             var addButton = event.target.closest('[data-add-item]');
             if (addButton) {
                 event.preventDefault();
@@ -1050,7 +1137,19 @@
                 return;
             }
             if (target.matches('input[name="sheet_subcategory_id"]')) {
-                syncSheetService();
+                console.log("Subcategory chip clicked:", target.value);
+                // Ensure the chip is properly selected
+                target.checked = true;
+                
+                // Force a UI refresh
+                var parentLabel = target.closest('label');
+                if (parentLabel) {
+                    parentLabel.style.pointerEvents = 'auto';
+                    parentLabel.style.cursor = 'pointer';
+                }
+                
+                // Refresh the service list
+                syncSheetService(true);
                 return;
             }
             refresh();

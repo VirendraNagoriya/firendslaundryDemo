@@ -419,7 +419,7 @@ function render_item_picker(array $items, array $catalog, array $options = []): 
                     <div class="sheet-section">
                         <span class="sheet-label">Service</span>
                         <?php foreach (service_categories() as $categoryKey => $categoryLabel): ?>
-                            <div class="chip-group" data-chip-group="<?= e($categoryKey) ?>"<?= $categoryKey === 'piece' ? '' : ' hidden' ?>>
+                            <div class="chip-group" data-chip-group="<?= e($categoryKey) ?>">
                                 <?= $serviceChips[$categoryKey] ?? '' ?>
                             </div>
                         <?php endforeach; ?>
